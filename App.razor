@@ -1,0 +1,31 @@
+<Router AppAssembly="@typeof(App).Assembly">
+    <Found Context="routeData">
+        <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)">
+            <NotAuthorized>
+                @if (context.User.Identity?.IsAuthenticated != true)
+                {
+                    <RedirectToLogin />
+                }
+                else
+                {
+                    <div class="container py-5 text-center">
+                        <h3>Acceso no autorizado</h3>
+                        <p class="text-muted">No tenés permisos para ver esta sección.</p>
+                        <a class="btn btn-primary" href="/">Volver al inicio</a>
+                    </div>
+                }
+            </NotAuthorized>
+            <Authorizing>
+                <div class="container py-5 text-center text-muted">Verificando acceso…</div>
+            </Authorizing>
+        </AuthorizeRouteView>
+    </Found>
+    <NotFound>
+        <LayoutView Layout="@typeof(MainLayout)">
+            <div class="container py-5 text-center">
+                <h3>Página no encontrada</h3>
+                <a class="btn btn-primary" href="/">Volver al inicio</a>
+            </div>
+        </LayoutView>
+    </NotFound>
+</Router>

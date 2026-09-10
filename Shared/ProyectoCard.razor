@@ -1,0 +1,31 @@
+<div class="card h-100">
+    <div class="card-body d-flex flex-column">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+            <span class="badge bg-info-subtle text-info-emphasis">@Proyecto.Categoria</span>
+            <small class="text-muted"><i class="bi bi-geo-alt"></i> @Proyecto.CiudadProyecto</small>
+        </div>
+        <h5 class="card-title">@Proyecto.Titulo</h5>
+        <p class="text-muted small mb-2">@Proyecto.Organizacion?.NombreOrganizacion</p>
+        <p class="card-text small text-secondary flex-grow-1">@Truncar(Proyecto.Descripcion, 110)</p>
+
+        <div class="mb-3">
+            <ProgressBar Porcentaje="Proyecto.PorcentajeAvance"
+                         Recaudado="Proyecto.MontoRecaudado"
+                         Objetivo="Proyecto.MontoObjetivo" />
+        </div>
+
+        <div class="d-flex gap-2">
+            <a class="btn btn-outline-secondary btn-sm flex-fill" href="/proyecto/@Proyecto.Id">Ver</a>
+            <a class="btn btn-primary btn-sm flex-fill" href="/proyecto/@Proyecto.Id">
+                <i class="bi bi-heart-fill me-1"></i>Donar
+            </a>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Proyecto Proyecto { get; set; } = default!;
+
+    private static string Truncar(string s, int max) =>
+        string.IsNullOrEmpty(s) || s.Length <= max ? s : s[..max] + "…";
+}

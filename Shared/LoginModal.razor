@@ -1,0 +1,132 @@
+@inject AuthService Auth
+@inject NavigationManager Nav
+
+@if (Visible)
+{
+    <div class="modal-backdrop fade show" style="z-index:1050;"></div>
+    <div class="modal fade show d-block" tabindex="-1" style="z-index:1055;" @onclick="Cerrar">
+        <div class="modal-dialog modal-dialog-centered" @onclick:stopPropagation="true">
+            <div class="modal-content">
+                <div class="modal-header border-0 pb-0">
+                    <ul class="nav nav-pills">
+                        <li class="nav-item">
+                            <button class="nav-link @(_tab == "login" ? "active" : "")" @onclick='() => _tab = "login"'>Ingresar</button>
+                        </li>
+                        <li class="nav-item ms-2">
+                            <button class="nav-link @(_tab == "registro" ? "active" : "")" @onclick='() => _tab = "registro"'>Registrarse</button>
+                        </li>
+                    </ul>
+                    <button type="button" class="btn-close" @onclick="Cerrar"></button>
+                </div>
+
+                <div class="modal-body">
+                    @if (_tab == "login")
+                    {
+                        <form method="post" action="/auth/login">
+                            <input type="hidden" name="returnUrl" value="@_returnUrl" />
+                            <div class="mb-3">
+                                <label class="form-label">Email</label>
+                                <input class="form-control" type="email" name="email" required />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Contraseña</label>
+                                <input class="form-control" type="password" name="password" required />
+                            </div>
+                            <button class="btn btn-primary w-100" type="submit">Entrar</button>
+                            <p class="text-center text-muted mt-3 mb-0" style="font-size:0.85rem;">
+                                Demo: <code>donante1@@demo.com</code> / <code>Demo1234</code>
+                            </p>
+                        </form>
+                    }
+                    else
+                    {
+                        <div class="btn-group w-100 mb-3" role="group">
+                            <button type="button" class="btn @(_esOng ? "btn-outline-primary" : "btn-primary")" @onclick="() => _esOng = false">Soy donante</button>
+                            <button type="button" class="btn @(_esOng ? "btn-primary" : "btn-outline-primary")" @onclick="() => _esOng = true">Represento una organización</button>
+                        </div>
+
+                        @if (!_esOng)
+                        {
+                            <form method="post" action="/auth/registro-donante">
+                                <div class="row g-2">
+                                    <div class="col"><input class="form-control" name="nombre" placeholder="Nombre" required /></div>
+                                    <div class="col"><input class="form-control" name="apellido" placeholder="Apellido" required /></div>
+                                </div>
+                                <input class="form-control mt-2" type="email" name="email" placeholder="Email" required />
+                                <input class="form-control mt-2" type="password" name="password" placeholder="Contraseña" minlength="6" required />
+                                <input class="form-control mt-2" type="password" name="confirm" placeholder="Confirmar contraseña" minlength="6" required />
+                                <button class="btn btn-primary w-100 mt-3" type="submit">Registrarme</button>
+                            </form>
+                        }
+                        else
+                        {
+                            <form method="post" action="/auth/registro-ong">
+                                <input class="form-control" name="nombreOrg" placeholder="Nombre de la organización" required />
+                                <input class="form-control mt-2" type="email" name="emailInstitucional" placeholder="Email institucional" required />
+                                <div class="input-group mt-2">
+                                    <input class="form-control" name="cuit" placeholder="XX-XXXXXXXX-X"
+                                           value="@_cuit" @oninput="OnCuitInput" maxlength="13" required />
+                                    <span class="input-group-text bg-white">
+                                        @if (string.IsNullOrEmpty(_cuit))
+                                        {
+                                            <i class="bi bi-dash-circle text-muted"></i>
+                                        }
+                                        else if (_cuitValido)
+                                        {
+                                            <i class="bi bi-check-circle-fill cuit-valid"></i>
+                                        }
+                                        else
+                                        {
+                                            <i class="bi bi-x-circle-fill cuit-invalid"></i>
+                                        }
+                                    </span>
+                                </div>
+                                <input class="form-control mt-2" type="password" name="password" placeholder="Contraseña" minlength="6" required />
+                                <input class="form-control mt-2" type="password" name="confirm" placeholder="Confirmar contraseña" minlength="6" required />
+                                <button class="btn btn-primary w-100 mt-3" type="submit" disabled="@(!_cuitValido)">Registrar organización</button>
+                            </form>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public EventCallback OnCloseRequested { get; set; }
+    [Parameter] public string InitialTab { get; set; } = "login";
+
+    private string _tab = "login";
+    private bool _esOng;
+    private string _cuit = "";
+    private bool _cuitValido;
+    private string _returnUrl = "/";
+
+    protected override void OnParametersSet()
+    {
+        if (Visible)
+        {
+            _tab = InitialTab;
+            _returnUrl = new Uri(Nav.Uri).PathAndQuery;
+        }
+    }
+
+    private void OnCuitInput(ChangeEventArgs e)
+    {
+        var digits = new string((e.Value?.ToString() ?? "").Where(char.IsDigit).ToArray());
+        if (digits.Length > 11) digits = digits[..11];
+
+        var formatted = digits;
+        if (digits.Length > 2)
+            formatted = digits[..2] + "-" + digits[2..];
+        if (digits.Length > 10)
+            formatted = digits[..2] + "-" + digits[2..10] + "-" + digits[10..];
+
+        _cuit = formatted;
+        _cuitValido = Auth.ValidarDigitoVerificadorCUIT(_cuit);
+    }
+
+    private async Task Cerrar() => await OnCloseRequested.InvokeAsync();
+}

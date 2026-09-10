@@ -1,0 +1,225 @@
+@page "/ong/dashboard"
+@attribute [Authorize(Roles = "Organizacion")]
+@inject AuthService Auth
+@inject ProyectoService ProyectoSvc
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject TrazeaBlock.Services.MercadoPago.MercadoPagoConexionService Conexion
+
+<PageTitle>Panel ONG — TraceBlock</PageTitle>
+
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center flex-wrap mb-4">
+        <h2 class="fw-bold mb-0">@(_org?.NombreOrganizacion) · Panel</h2>
+        <div class="d-flex gap-2">
+            <a class="btn btn-outline-secondary btn-sm" href="/ong/proyectos">Mis Proyectos</a>
+            <a class="btn btn-primary btn-sm" href="/ong/nuevo-proyecto"><i class="bi bi-plus-lg me-1"></i>Nuevo Proyecto</a>
+        </div>
+    </div>
+
+    @if (_mpMensaje is not null)
+    {
+        <div class="alert @_mpMensajeClase alert-dismissible">@_mpMensaje</div>
+    }
+
+    <!-- Conexión con MercadoPago (Marketplace) -->
+    <div class="card mb-4"><div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+            <h6 class="fw-bold mb-1"><i class="bi bi-wallet2 me-1"></i>Cobros con MercadoPago</h6>
+            @if (_mpConectada)
+            {
+                <span class="badge bg-success"><i class="bi bi-check-circle-fill me-1"></i>Cuenta conectada</span>
+                <small class="text-muted ms-2">Las donaciones a tus proyectos entran en tu cuenta.</small>
+            }
+            else
+            {
+                <small class="text-muted">Conectá tu cuenta para poder recibir donaciones en tus proyectos.</small>
+            }
+        </div>
+        @if (_mpConectada)
+        {
+            <a class="btn btn-outline-secondary btn-sm" href="/mp/oauth/connect">Reconectar</a>
+        }
+        else
+        {
+            <a class="btn btn-primary" href="/mp/oauth/connect"><i class="bi bi-link-45deg me-1"></i>Conectar MercadoPago</a>
+        }
+    </div></div>
+
+    @if (_proyectos is null)
+    {
+        <p class="text-muted">Cargando…</p>
+    }
+    else
+    {
+        <!-- KPIs -->
+        <div class="row g-3 mb-4">
+            <div class="col-6 col-md-3"><div class="card text-center"><div class="card-body">
+                <div class="fs-4 fw-bold text-success">@Fmt(_totalRecaudado)</div><small class="text-muted">Total recaudado</small>
+            </div></div></div>
+            <div class="col-6 col-md-3"><div class="card text-center"><div class="card-body">
+                <div class="fs-4 fw-bold text-primary">@_proyectosActivos</div><small class="text-muted">Proyectos activos</small>
+            </div></div></div>
+            <div class="col-6 col-md-3"><div class="card text-center"><div class="card-body">
+                <div class="fs-4 fw-bold text-info">@_totalDonaciones</div><small class="text-muted">Total donaciones</small>
+            </div></div></div>
+            <div class="col-6 col-md-3"><div class="card text-center"><div class="card-body">
+                <div class="fs-4 fw-bold text-warning">@_donantesUnicos</div><small class="text-muted">Donantes únicos</small>
+            </div></div></div>
+        </div>
+
+        <div class="row g-4 mb-4">
+            <div class="col-lg-6"><div class="card"><div class="card-body">
+                <h6 class="fw-bold">Recaudación por proyecto</h6>
+                <div style="height:280px;"><canvas id="barChart"></canvas></div>
+            </div></div></div>
+            <div class="col-lg-6"><div class="card"><div class="card-body">
+                <h6 class="fw-bold">Donaciones por día (últimos 30 días)</h6>
+                <div style="height:280px;"><canvas id="lineChart"></canvas></div>
+            </div></div></div>
+        </div>
+
+        <!-- ÚLTIMAS DONACIONES -->
+        <div class="card"><div class="card-body">
+            <h6 class="fw-bold mb-3">Últimas donaciones</h6>
+            @if (!_ultimas.Any())
+            {
+                <small class="text-muted">Todavía no hay donaciones.</small>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table align-middle">
+                        <thead><tr><th>Fecha</th><th>Proyecto</th><th>Donante</th><th>Monto</th><th>Token ID</th></tr></thead>
+                        <tbody>
+                            @foreach (var d in _ultimas)
+                            {
+                                <tr>
+                                    <td><small>@d.FechaDonacion.ToString("dd/MM/yyyy")</small></td>
+                                    <td><small>@TituloProyecto(d.ProyectoId)</small></td>
+                                    <td><small>@(d.Anonima ? "Anónimo" : (d.Usuario?.Nombre ?? "Donante"))</small></td>
+                                    <td class="text-success fw-semibold">@Fmt(d.Monto)</td>
+                                    <td><TokenDisplay Token="@d.TokenId" Color="yellow" Truncar="true" /></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div></div>
+    }
+</div>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+    private static readonly CultureInfo Ar = CultureInfo.GetCultureInfo("es-AR");
+
+    private Organizacion? _org;
+    private List<Proyecto>? _proyectos;
+    private decimal _totalRecaudado;
+    private int _proyectosActivos;
+    private int _totalDonaciones;
+    private int _donantesUnicos;
+    private List<Donacion> _ultimas = new();
+    private bool _chartsRendered;
+    private bool _mpConectada;
+    private string? _mpMensaje;
+    private string _mpMensajeClase = "alert-info";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthState;
+        _org = await Auth.ObtenerOrganizacionPorUsuarioAsync(state.User.GetUserId());
+        if (_org is null || _org.Estado != EstadoValidacion.Validada)
+        {
+            Nav.NavigateTo("/pendiente");
+            return;
+        }
+
+        _mpConectada = await Conexion.EstaConectadaAsync(_org.Id);
+
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(Nav.Uri).Query);
+        if (query.TryGetValue("mp", out var mp))
+        {
+            (_mpMensaje, _mpMensajeClase) = mp.ToString() switch
+            {
+                "ok" => ("¡Cuenta de MercadoPago conectada! Ya podés recibir donaciones.", "alert-success"),
+                "error" => ("No se pudo conectar la cuenta de MercadoPago. Intentá de nuevo.", "alert-danger"),
+                "config" => ("Falta configurar las credenciales OAuth de MercadoPago (Client ID/Secret/Redirect).", "alert-warning"),
+                _ => (null, "alert-info")
+            };
+        }
+
+        _proyectos = await ProyectoSvc.ObtenerDeOrganizacionAsync(_org.Id);
+        _totalRecaudado = _proyectos.Sum(p => p.MontoRecaudado);
+        _proyectosActivos = _proyectos.Count(p => p.Estado == EstadoProyecto.Activo);
+
+        var todas = _proyectos.SelectMany(p => p.Donaciones).ToList();
+        _totalDonaciones = todas.Count;
+        _donantesUnicos = todas.Select(d => d.UsuarioId).Distinct().Count();
+        _ultimas = todas.OrderByDescending(d => d.FechaDonacion).Take(10).ToList();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_proyectos is not null && _proyectos.Count > 0 && !_chartsRendered)
+        {
+            _chartsRendered = true;
+            await RenderCharts();
+        }
+    }
+
+    private async Task RenderCharts()
+    {
+        var labels = _proyectos!.Select(p => p.Titulo).ToArray();
+        var recaudados = _proyectos!.Select(p => p.MontoRecaudado).ToArray();
+        var objetivos = _proyectos!.Select(p => p.MontoObjetivo).ToArray();
+        await JS.InvokeVoidAsync("renderBarChart", "barChart", labels, recaudados, objetivos);
+
+        // Línea: últimos 30 días
+        var dias = Enumerable.Range(0, 30)
+            .Select(i => DateTime.UtcNow.Date.AddDays(-29 + i))
+            .ToList();
+        var diaLabels = dias.Select(d => d.ToString("dd/MM")).ToArray();
+
+        var colores = new[] { "#0d6efd", "#20c997", "#fd7e14", "#6f42c1", "#d63384", "#198754" };
+        var datasets = new List<object>();
+
+        for (int i = 0; i < _proyectos!.Count; i++)
+        {
+            var p = _proyectos[i];
+            var data = dias.Select(dia => (double)p.Donaciones
+                .Where(d => d.FechaDonacion.Date == dia)
+                .Sum(d => d.Monto)).ToArray();
+            datasets.Add(new
+            {
+                label = p.Titulo,
+                data,
+                borderColor = colores[i % colores.Length],
+                backgroundColor = colores[i % colores.Length],
+                fill = false
+            });
+        }
+
+        // Línea total
+        var totalData = dias.Select(dia => (double)_proyectos!
+            .SelectMany(p => p.Donaciones)
+            .Where(d => d.FechaDonacion.Date == dia)
+            .Sum(d => d.Monto)).ToArray();
+        datasets.Add(new
+        {
+            label = "Total",
+            data = totalData,
+            borderColor = "#1a1a2e",
+            backgroundColor = "#1a1a2e",
+            borderDash = new[] { 5, 5 },
+            fill = false
+        });
+
+        await JS.InvokeVoidAsync("renderLineChart", "lineChart", diaLabels, datasets);
+    }
+
+    private string TituloProyecto(int id) => _proyectos?.FirstOrDefault(p => p.Id == id)?.Titulo ?? "—";
+
+    private static string Fmt(decimal v) => "$" + v.ToString("N0", Ar);
+}

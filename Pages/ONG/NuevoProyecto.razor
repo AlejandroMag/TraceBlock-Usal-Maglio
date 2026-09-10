@@ -1,0 +1,439 @@
+@page "/ong/nuevo-proyecto"
+@attribute [Authorize(Roles = "Organizacion")]
+@implements IDisposable
+@inject AuthService Auth
+@inject ProyectoService ProyectoSvc
+@inject ValidacionesConfig Config
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>Nuevo Proyecto — TraceBlock</PageTitle>
+
+<div class="container py-4">
+    <h2 class="fw-bold mb-3">Nuevo Proyecto</h2>
+
+    <!-- STEPPER -->
+    <div class="d-flex align-items-center gap-2 mb-4">
+        @for (int i = 1; i <= 3; i++)
+        {
+            var n = i;
+            <div class="@(StepClass(n)) d-flex align-items-center gap-1">
+                <i class="bi bi-@(n)-circle@(_step > n ? "-fill" : "") fs-4"></i>
+                <span>@StepNombre(n)</span>
+            </div>
+            @if (i < 3)
+            {
+                <div style="width:40px; height:2px; background:#dee2e6;"></div>
+            }
+        }
+    </div>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="alert alert-danger">@_error</div>
+    }
+
+    <div class="card"><div class="card-body p-4">
+
+        @* ---------- PASO 1 ---------- *@
+        @if (_step == 1)
+        {
+            <h5 class="fw-bold mb-3">Información básica</h5>
+
+            <label class="form-label">Título <small class="text-muted">(@(_titulo.Length)/80)</small></label>
+            <input class="form-control mb-3" maxlength="80" @bind="_titulo" @bind:event="oninput" />
+
+            <label class="form-label">Descripción <small class="text-muted">(@(_descripcion.Length)/2000)</small></label>
+            <textarea class="form-control mb-3" rows="4" maxlength="2000" @bind="_descripcion" @bind:event="oninput"></textarea>
+
+            <div class="row g-3 mb-3">
+                <div class="col-md-4">
+                    <label class="form-label">Categoría</label>
+                    <select class="form-select" @bind="_categoria">
+                        @foreach (var c in Categorias)
+                        {
+                            <option value="@c">@c</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Monto objetivo</label>
+                    <div class="input-group">
+                        <span class="input-group-text">$</span>
+                        <input class="form-control" type="number" min="1000" @bind="_montoObjetivo" />
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Fecha objetivo</label>
+                    <input class="form-control" type="date" min="@_minFecha" @bind="_fechaObjetivo" />
+                </div>
+            </div>
+
+            <hr />
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h6 class="fw-bold mb-0">Hitos (@_hitos.Count/10)</h6>
+                <button class="btn btn-sm btn-outline-primary" @onclick="AgregarHito" disabled="@(_hitos.Count >= 10)">
+                    <i class="bi bi-plus-lg"></i> Agregar hito
+                </button>
+            </div>
+
+            @for (int i = 0; i < _hitos.Count; i++)
+            {
+                var idx = i;
+                var h = _hitos[idx];
+                <div class="border rounded p-3 mb-2">
+                    <div class="d-flex justify-content-between mb-2">
+                        <strong>Hito @(idx + 1)</strong>
+                        <div class="btn-group btn-group-sm">
+                            <button class="btn btn-outline-secondary" disabled="@(idx == 0)" @onclick="() => Mover(idx, -1)"><i class="bi bi-arrow-up"></i></button>
+                            <button class="btn btn-outline-secondary" disabled="@(idx == _hitos.Count - 1)" @onclick="() => Mover(idx, 1)"><i class="bi bi-arrow-down"></i></button>
+                            <button class="btn btn-outline-danger" @onclick="() => QuitarHito(idx)"><i class="bi bi-x-lg"></i></button>
+                        </div>
+                    </div>
+                    <input class="form-control form-control-sm mb-2" placeholder="Título del hito" @bind="h.Titulo" @bind:event="oninput" />
+                    <textarea class="form-control form-control-sm mb-2" rows="1" placeholder="Descripción" @bind="h.Descripcion" @bind:event="oninput"></textarea>
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text">$</span>
+                                <input class="form-control" type="number" placeholder="Monto referencia (opcional)" @bind="h.MontoReferencia" />
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <input class="form-control form-control-sm" type="date" @bind="h.FechaObjetivo" />
+                        </div>
+                    </div>
+                </div>
+            }
+
+            <div class="text-end mt-3">
+                <button class="btn btn-primary" @onclick="ContinuarDesde1">Continuar →</button>
+            </div>
+        }
+
+        @* ---------- PASO 2 ---------- *@
+        else if (_step == 2)
+        {
+            <h5 class="fw-bold mb-2">Ubicación</h5>
+            <p class="text-muted">
+                Marcá en el mapa dónde se va a ejecutar este proyecto. Tu ubicación actual se usa para
+                verificar que el proyecto esté dentro de tu área: no puede estar a más de
+                <strong>@GeoUtils.MaxDistanciaKm.ToString("N0") km</strong> de donde estás.
+            </p>
+
+            @* Estado de la ubicación de la ONG *@
+            @if (_ubicacionDenegada)
+            {
+                <div class="alert alert-danger d-flex justify-content-between align-items-center py-2">
+                    <span><i class="bi bi-exclamation-triangle-fill me-1"></i>Necesitamos tu ubicación para validar el área del proyecto. Habilitá el permiso de ubicación en el navegador.</span>
+                    <button class="btn btn-sm btn-danger" @onclick="ReintentarUbicacion"><i class="bi bi-arrow-clockwise me-1"></i>Reintentar</button>
+                </div>
+            }
+            else if (!_tieneUbicacionUsuario)
+            {
+                <div class="alert alert-info py-2">
+                    <span class="spinner-border spinner-border-sm me-1"></span>Obteniendo tu ubicación…
+                    <span class="text-muted d-block mt-1" style="font-size:0.85rem;">Aceptá el permiso de ubicación del navegador. Si no aparece o lo bloqueaste, en unos segundos vas a poder reintentar.</span>
+                </div>
+            }
+            else
+            {
+                <div class="alert alert-light border py-2">
+                    <i class="bi bi-geo-alt-fill text-primary me-1"></i>El círculo azul marca los @GeoUtils.MaxDistanciaKm.ToString("N0") km permitidos alrededor tuyo.
+                </div>
+            }
+
+            <div id="mapProyecto" style="height:500px;" class="mb-2"></div>
+
+            @if (_tieneUbicacionUsuario && _tieneMarker)
+            {
+                @if (_ubicacionValida)
+                {
+                    <div class="alert alert-success py-2">
+                        <i class="bi bi-check-circle-fill me-1"></i>A @_distanciaKm.GetValueOrDefault().ToString("N1") km de tu ubicación — dentro del rango permitido.
+                    </div>
+                }
+                else
+                {
+                    <div class="alert alert-danger py-2">
+                        <i class="bi bi-x-circle-fill me-1"></i>A @_distanciaKm.GetValueOrDefault().ToString("N1") km de tu ubicación — excede los @GeoUtils.MaxDistanciaKm.ToString("N0") km. Elegí un punto más cerca.
+                    </div>
+                }
+            }
+            else if (_tieneUbicacionUsuario)
+            {
+                <div class="alert alert-warning py-2">Hacé click en el mapa para seleccionar la ubicación del proyecto.</div>
+            }
+
+            <div class="d-flex justify-content-between mt-3">
+                <button class="btn btn-outline-secondary" @onclick="() => IrAPaso(1)">← Atrás</button>
+                <button class="btn btn-primary" @onclick="ContinuarDesde2" disabled="@(!_tieneMarker || !_tieneUbicacionUsuario || !_ubicacionValida)">Continuar →</button>
+            </div>
+        }
+
+        @* ---------- PASO 3 ---------- *@
+        else
+        {
+            <h5 class="fw-bold mb-3">Revisión y publicación</h5>
+            <dl class="row">
+                <dt class="col-sm-3">Título</dt><dd class="col-sm-9">@_titulo</dd>
+                <dt class="col-sm-3">Categoría</dt><dd class="col-sm-9">@_categoria</dd>
+                <dt class="col-sm-3">Monto objetivo</dt><dd class="col-sm-9">@Fmt(_montoObjetivo)</dd>
+                <dt class="col-sm-3">Fecha objetivo</dt><dd class="col-sm-9">@_fechaObjetivo.ToString("dd/MM/yyyy")</dd>
+                <dt class="col-sm-3">Ubicación</dt><dd class="col-sm-9">@_ciudadProyecto (@_latProyecto.ToString("F4", CultureInfo.InvariantCulture), @_lonProyecto.ToString("F4", CultureInfo.InvariantCulture))</dd>
+                <dt class="col-sm-3">Hitos</dt>
+                <dd class="col-sm-9">
+                    <ol class="mb-0">
+                        @foreach (var h in _hitos)
+                        {
+                            <li>@h.Titulo @(h.MontoReferencia is > 0 ? $"— {Fmt(h.MontoReferencia.Value)}" : "")</li>
+                        }
+                    </ol>
+                </dd>
+            </dl>
+
+            @if (Config.ValidarGeolocalizacion)
+            {
+                @if (_distanciaKm is not null)
+                {
+                    <div class="alert alert-success py-2"><i class="bi bi-geo-alt-fill me-1"></i>Ubicación validada: a @_distanciaKm.Value.ToString("N1") km de tu posición (máx. @GeoUtils.MaxDistanciaKm.ToString("N0") km).</div>
+                }
+            }
+            else
+            {
+                <div class="alert alert-info py-2"><i class="bi bi-info-circle me-1"></i>Modo demo: validación geográfica desactivada.</div>
+            }
+
+            <div class="d-flex justify-content-between mt-3">
+                <button class="btn btn-outline-secondary" @onclick="() => IrAPaso(2)">← Atrás</button>
+                <button class="btn btn-success" @onclick="Publicar" disabled="@_publicando">
+                    @if (_publicando)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                        <text>Publicando…</text>
+                    }
+                    else { <text>Publicar proyecto</text> }
+                </button>
+            </div>
+        }
+    </div></div>
+</div>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+    private static readonly CultureInfo Ar = CultureInfo.GetCultureInfo("es-AR");
+    private static readonly string[] Categorias =
+        { "Alimentación", "Educación", "Salud", "Vivienda", "Medioambiente", "Tecnología", "Otro" };
+
+    private int _step = 1;
+    private string _error = "";
+    private string _titulo = "";
+    private string _descripcion = "";
+    private string _categoria = "Alimentación";
+    private decimal _montoObjetivo = 50000;
+    private DateTime _fechaObjetivo = DateTime.Today.AddDays(60);
+    private string _minFecha = DateTime.Today.AddDays(30).ToString("yyyy-MM-dd");
+    private readonly List<Hito> _hitos = new();
+
+    private double _latProyecto;
+    private double _lonProyecto;
+    private string _ciudadProyecto = "";
+    private bool _tieneMarker;
+
+    // Ubicación de la ONG (navegador) — punto de referencia para la validación de 10 km
+    private double _latUsuario;
+    private double _lonUsuario;
+    private bool _tieneUbicacionUsuario;
+    private bool _ubicacionDenegada;
+    private double? _distanciaKm;
+    private bool _ubicacionValida;
+
+    private Organizacion? _org;
+    private bool _publicando;
+    private bool _mapRendered;
+    private DotNetObjectReference<NuevoProyecto>? _dotNetRef;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _dotNetRef = DotNetObjectReference.Create(this);
+        var state = await AuthState;
+        _org = await Auth.ObtenerOrganizacionPorUsuarioAsync(state.User.GetUserId());
+        if (_org is null || _org.Estado != EstadoValidacion.Validada)
+        {
+            Nav.NavigateTo("/pendiente");
+            return;
+        }
+        if (_hitos.Count == 0) AgregarHito();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_step == 2 && !_mapRendered)
+        {
+            _mapRendered = true;
+            var lat = _org?.LatitudSede ?? -34.6037;
+            var lon = _org?.LongitudSede ?? -58.3816;
+            await JS.InvokeVoidAsync("locateAndInit", "mapProyecto", lat, lon, _dotNetRef);
+        }
+    }
+
+    [JSInvokable]
+    public void OnMapClick(double lat, double lon)
+    {
+        _latProyecto = lat;
+        _lonProyecto = lon;
+        _ciudadProyecto = "Ubicación seleccionada";
+        _tieneMarker = true;
+        RecalcularDistancia();
+        InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public void OnUserLocation(double lat, double lon, bool ok)
+    {
+        if (ok)
+        {
+            _latUsuario = lat;
+            _lonUsuario = lon;
+            _tieneUbicacionUsuario = true;
+            _ubicacionDenegada = false;
+            RecalcularDistancia();
+        }
+        else
+        {
+            _tieneUbicacionUsuario = false;
+            _ubicacionDenegada = true;
+        }
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void RecalcularDistancia()
+    {
+        if (_tieneUbicacionUsuario && _tieneMarker)
+        {
+            _distanciaKm = GeoUtils.DistanciaKm(_latProyecto, _lonProyecto, _latUsuario, _lonUsuario);
+            _ubicacionValida = _distanciaKm <= GeoUtils.MaxDistanciaKm;
+        }
+        else
+        {
+            _distanciaKm = null;
+            _ubicacionValida = false;
+        }
+    }
+
+    private async Task ReintentarUbicacion()
+    {
+        _ubicacionDenegada = false;
+        _tieneUbicacionUsuario = false;
+        _tieneMarker = false;
+        _distanciaKm = null;
+        _ubicacionValida = false;
+        _error = "";
+        StateHasChanged();
+
+        var lat = _org?.LatitudSede ?? -34.6037;
+        var lon = _org?.LongitudSede ?? -58.3816;
+        await JS.InvokeVoidAsync("locateAndInit", "mapProyecto", lat, lon, _dotNetRef);
+    }
+
+    private void AgregarHito() => _hitos.Add(new Hito { Orden = _hitos.Count + 1 });
+
+    private void QuitarHito(int idx)
+    {
+        _hitos.RemoveAt(idx);
+        ReordenarHitos();
+    }
+
+    private void Mover(int idx, int dir)
+    {
+        var nuevo = idx + dir;
+        if (nuevo < 0 || nuevo >= _hitos.Count) return;
+        (_hitos[idx], _hitos[nuevo]) = (_hitos[nuevo], _hitos[idx]);
+        ReordenarHitos();
+    }
+
+    private void ReordenarHitos()
+    {
+        for (int i = 0; i < _hitos.Count; i++) _hitos[i].Orden = i + 1;
+    }
+
+    private void ContinuarDesde1()
+    {
+        _error = "";
+        if (string.IsNullOrWhiteSpace(_titulo)) { _error = "El título es obligatorio."; return; }
+        if (string.IsNullOrWhiteSpace(_descripcion)) { _error = "La descripción es obligatoria."; return; }
+        if (_montoObjetivo < 1000) { _error = "El monto objetivo debe ser de al menos $1.000."; return; }
+        if (_fechaObjetivo < DateTime.Today.AddDays(30)) { _error = "La fecha objetivo debe ser al menos 30 días en el futuro."; return; }
+        if (_hitos.Count < 1) { _error = "Agregá al menos un hito."; return; }
+        if (_hitos.Any(h => string.IsNullOrWhiteSpace(h.Titulo))) { _error = "Todos los hitos deben tener título."; return; }
+        IrAPaso(2);
+    }
+
+    private void ContinuarDesde2()
+    {
+        if (!_tieneUbicacionUsuario) { _error = "Necesitamos tu ubicación para validar el área del proyecto. Habilitá el permiso y reintentá."; return; }
+        if (!_tieneMarker) { _error = "Seleccioná una ubicación en el mapa."; return; }
+        if (!_ubicacionValida)
+        {
+            _error = $"El proyecto está a {_distanciaKm:N1} km de tu ubicación. Debe estar dentro de los {GeoUtils.MaxDistanciaKm:N0} km.";
+            return;
+        }
+        IrAPaso(3);
+    }
+
+    private void IrAPaso(int paso)
+    {
+        if (paso != 2) _mapRendered = false;
+        _error = "";
+        _step = paso;
+    }
+
+    private async Task Publicar()
+    {
+        if (_org is null) return;
+        if (!_tieneUbicacionUsuario)
+        {
+            _error = "Necesitamos tu ubicación para validar el área del proyecto.";
+            IrAPaso(2);
+            return;
+        }
+        _publicando = true;
+        _error = "";
+        StateHasChanged();
+
+        var proyecto = new Proyecto
+        {
+            OrganizacionId = _org.Id,
+            Titulo = _titulo.Trim(),
+            Descripcion = _descripcion.Trim(),
+            Categoria = _categoria,
+            MontoObjetivo = _montoObjetivo,
+            MontoRecaudado = 0,
+            Estado = EstadoProyecto.Activo,
+            FechaObjetivo = _fechaObjetivo,
+            CiudadProyecto = _ciudadProyecto,
+            LatitudProyecto = _latProyecto,
+            LongitudProyecto = _lonProyecto,
+            Hitos = _hitos
+        };
+
+        var (creado, error) = await ProyectoSvc.CrearProyectoAsync(proyecto, _latUsuario, _lonUsuario);
+        _publicando = false;
+
+        if (creado is null)
+        {
+            _error = error ?? "No se pudo crear el proyecto.";
+            IrAPaso(2);
+            StateHasChanged();
+            return;
+        }
+
+        Nav.NavigateTo("/ong/proyectos", forceLoad: true);
+    }
+
+    private string StepClass(int n) => n == _step ? "step-active" : (n < _step ? "step-done" : "step-pending");
+    private static string StepNombre(int n) => n switch { 1 => "Información", 2 => "Ubicación", _ => "Revisión" };
+    private static string Fmt(decimal v) => "$" + v.ToString("N0", Ar);
+
+    public void Dispose() => _dotNetRef?.Dispose();
+}

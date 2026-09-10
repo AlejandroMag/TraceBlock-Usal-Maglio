@@ -1,0 +1,155 @@
+@page "/pendiente"
+@attribute [Authorize(Roles = "Organizacion")]
+@inject AuthService Auth
+@inject HashingService Hasher
+@inject IAfipService Afip
+@inject ICenocService Cenoc
+@inject ValidacionesConfig Config
+@inject NavigationManager Nav
+
+<PageTitle>Validación pendiente — TraceBlock</PageTitle>
+
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-lg-7">
+
+            <!-- STEPPER -->
+            <div class="d-flex align-items-center justify-content-center gap-3 mb-4">
+                <div class="text-center">
+                    <div class="step-done"><i class="bi bi-check-circle-fill fs-3"></i></div>
+                    <small class="step-done fw-semibold">CUIT registrado</small>
+                </div>
+                <div style="width:60px; height:2px; background:#dee2e6;"></div>
+                <div class="text-center">
+                    <div class="step-active"><i class="bi bi-2-circle fs-3"></i></div>
+                    <small class="step-active">Acreditación CENOC</small>
+                </div>
+            </div>
+
+            <div class="card"><div class="card-body p-4">
+                <h4 class="fw-bold">Acreditá tu organización ante el CENOC</h4>
+                <p class="text-muted">
+                    Subí el PDF que acredita tu organización ante el CENOC. El sistema calculará la huella
+                    digital SHA-256 del documento y la registrará de forma inmutable.
+                </p>
+
+                @if (_validada)
+                {
+                    <div class="alert alert-success">
+                        <i class="bi bi-check-circle-fill me-1"></i>¡Organización validada! Redirigiendo…
+                    </div>
+                }
+                else
+                {
+                    @if (!string.IsNullOrEmpty(_error))
+                    {
+                        <div class="alert alert-danger py-2">@_error</div>
+                    }
+
+                    <InputFile class="form-control" accept=".pdf" OnChange="OnArchivoSeleccionado" />
+
+                    @if (_nombreArchivo is not null)
+                    {
+                        <div class="mt-3 p-3 border rounded">
+                            <div><i class="bi bi-file-earmark-pdf text-danger me-1"></i><strong>@_nombreArchivo</strong>
+                                <span class="text-muted small">(@FmtTam(_tamano))</span></div>
+                            @if (_hash is not null)
+                            {
+                                <div class="mt-2">
+                                    <TokenDisplay Token="@_hash" Label="Huella digital del documento (SHA-256)" Color="green" />
+                                </div>
+                            }
+                        </div>
+
+                        <button class="btn btn-primary mt-3" @onclick="Validar" disabled="@_procesando">
+                            @if (_procesando)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1"></span>
+                                <text>Verificando con CENOC…</text>
+                            }
+                            else
+                            {
+                                <text>Validar y activar organización</text>
+                            }
+                        </button>
+                    }
+                }
+            </div></div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    private int _usuarioId;
+    private string? _nombreArchivo;
+    private long _tamano;
+    private byte[]? _contenido;
+    private string? _hash;
+    private bool _procesando;
+    private bool _validada;
+    private string _error = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthState;
+        _usuarioId = state.User.GetUserId();
+
+        var org = await Auth.ObtenerOrganizacionPorUsuarioAsync(_usuarioId);
+        if (org is not null && org.Estado == EstadoValidacion.Validada)
+            Nav.NavigateTo("/ong/dashboard");
+    }
+
+    private async Task OnArchivoSeleccionado(InputFileChangeEventArgs e)
+    {
+        _error = "";
+        _hash = null;
+        var file = e.File;
+        if (file.Size > 5 * 1024 * 1024)
+        {
+            _error = "El archivo supera el límite de 5 MB.";
+            _nombreArchivo = null;
+            return;
+        }
+
+        using var ms = new MemoryStream();
+        await file.OpenReadStream(5 * 1024 * 1024).CopyToAsync(ms);
+        _contenido = ms.ToArray();
+        _nombreArchivo = file.Name;
+        _tamano = file.Size;
+        _hash = Hasher.CalcularSHA256(_contenido);
+    }
+
+    private async Task Validar()
+    {
+        if (_contenido is null) return;
+        _procesando = true;
+        _error = "";
+        StateHasChanged();
+
+        await Task.Delay(1000); // simula verificación con CENOC
+
+        var (exito, error) = await Auth.ValidarCenocAsync(_usuarioId, _contenido, Afip, Cenoc, Config, Hasher);
+        _procesando = false;
+
+        if (!exito)
+        {
+            _error = error ?? "No se pudo validar la organización.";
+            StateHasChanged();
+            return;
+        }
+
+        _validada = true;
+        StateHasChanged();
+        await Task.Delay(2000);
+        Nav.NavigateTo("/ong/dashboard", forceLoad: true);
+    }
+
+    private static string FmtTam(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:N1} KB";
+        return $"{bytes / (1024.0 * 1024.0):N1} MB";
+    }
+}

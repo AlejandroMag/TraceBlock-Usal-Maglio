@@ -1,0 +1,125 @@
+@inject HashingService Hasher
+@inject EvidenciaService Evidencias
+
+<div class="border rounded p-3">
+    <h6 class="fw-bold mb-2">Subir evidencia</h6>
+
+    @if (_resultado is not null)
+    {
+        <div class="alert alert-success py-2 small mb-2">
+            <i class="bi bi-check-circle-fill me-1"></i>Evidencia grabada de forma inmutable en Polygon.
+        </div>
+        <TokenDisplay Token="@_resultado.TxHashBlockchain" Label="Transaction Hash (Polygon)" Color="cyan" />
+        <button class="btn btn-sm btn-outline-secondary mt-2" @onclick="Reset">Subir otra</button>
+    }
+    else
+    {
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div class="alert alert-danger py-2 small">@_error</div>
+        }
+
+        <InputFile class="form-control form-control-sm mb-2" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.docx" OnChange="OnArchivo" />
+
+        @if (_nombre is not null)
+        {
+            <div class="small mb-2"><i class="bi bi-file-earmark me-1"></i>@_nombre (@FmtTam(_tamano))</div>
+            @if (_hash is not null)
+            {
+                <TokenDisplay Token="@_hash" Label="SHA-256 calculado localmente" Color="green" />
+            }
+        }
+
+        <div class="row g-2 mt-1">
+            <div class="col-md-5">
+                <select class="form-select form-select-sm" @bind="_tipo">
+                    <option>Factura</option>
+                    <option>Foto</option>
+                    <option>Informe</option>
+                    <option>Certificado</option>
+                </select>
+            </div>
+            <div class="col-md-7">
+                <input class="form-control form-control-sm" maxlength="300" placeholder="Descripción" @bind="_descripcion" />
+            </div>
+        </div>
+
+        <button class="btn btn-sm btn-primary mt-2" @onclick="Registrar" disabled="@(_contenido is null || _procesando)">
+            @if (_procesando)
+            {
+                <span class="spinner-border spinner-border-sm me-1"></span>
+                <text>@_faseTexto</text>
+            }
+            else
+            {
+                <text>Registrar en blockchain</text>
+            }
+        </button>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public int ProyectoId { get; set; }
+    [Parameter] public EventCallback<Evidencia> OnSubida { get; set; }
+
+    private string? _nombre;
+    private long _tamano;
+    private byte[]? _contenido;
+    private string? _hash;
+    private string _tipo = "Factura";
+    private string _descripcion = "";
+    private bool _procesando;
+    private string _faseTexto = "";
+    private string _error = "";
+    private Evidencia? _resultado;
+
+    private async Task OnArchivo(InputFileChangeEventArgs e)
+    {
+        _error = "";
+        _hash = null;
+        var file = e.File;
+        if (file.Size > 10 * 1024 * 1024)
+        {
+            _error = "El archivo supera el límite de 10 MB.";
+            _nombre = null; _contenido = null;
+            return;
+        }
+        using var ms = new MemoryStream();
+        await file.OpenReadStream(10 * 1024 * 1024).CopyToAsync(ms);
+        _contenido = ms.ToArray();
+        _nombre = file.Name;
+        _tamano = file.Size;
+        _hash = Hasher.CalcularSHA256(_contenido);
+    }
+
+    private async Task Registrar()
+    {
+        if (_contenido is null || _nombre is null) return;
+        _procesando = true;
+        _faseTexto = "Calculando hash…";
+        StateHasChanged();
+        await Task.Delay(400);
+        _faseTexto = "Registrando en Polygon…";
+        StateHasChanged();
+
+        _resultado = await Evidencias.SubirEvidenciaAsync(ProyectoId, _nombre, _contenido, _descripcion, _tipo);
+        _procesando = false;
+        StateHasChanged();
+
+        if (OnSubida.HasDelegate)
+            await OnSubida.InvokeAsync(_resultado);
+    }
+
+    private void Reset()
+    {
+        _resultado = null;
+        _nombre = null; _contenido = null; _hash = null; _descripcion = ""; _tipo = "Factura";
+    }
+
+    private static string FmtTam(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:N1} KB";
+        return $"{bytes / (1024.0 * 1024.0):N1} MB";
+    }
+}

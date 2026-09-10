@@ -1,0 +1,84 @@
+<nav class="navbar navbar-expand-lg navbar-dark navbar-dark-custom sticky-top px-3">
+    <div class="container-fluid">
+        <AuthorizeView>
+            <Authorized>
+                @{
+                    var esDonante = context.User.IsInRole("Donante");
+                    var brandHref = esDonante ? "/dashboard" : (context.User.IsInRole("Organizacion") ? "/ong/dashboard" : "/");
+                }
+                <a class="navbar-brand d-flex align-items-center gap-2 fw-bold" href="@brandHref">
+                    <i class="bi bi-link-45deg fs-4"></i> TraceBlock
+                </a>
+
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMain">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <div class="collapse navbar-collapse" id="navMain">
+                    <ul class="navbar-nav me-auto">
+                        @if (esDonante)
+                        {
+                            <li class="nav-item"><a class="nav-link" href="/dashboard"><i class="bi bi-heart me-1"></i>Mis Donaciones</a></li>
+                            <li class="nav-item"><a class="nav-link" href="/proyectos"><i class="bi bi-compass me-1"></i>Explorar</a></li>
+                            <li class="nav-item"><a class="nav-link" href="/rastrear"><i class="bi bi-search me-1"></i>Rastrear</a></li>
+                        }
+                        else if (context.User.IsInRole("Organizacion"))
+                        {
+                            <li class="nav-item"><a class="nav-link" href="/ong/dashboard"><i class="bi bi-speedometer2 me-1"></i>Dashboard</a></li>
+                            <li class="nav-item"><a class="nav-link" href="/ong/proyectos"><i class="bi bi-folder me-1"></i>Mis Proyectos</a></li>
+                            <li class="nav-item"><a class="nav-link" href="/ong/comunicados"><i class="bi bi-megaphone me-1"></i>Comunicados</a></li>
+                            <li class="nav-item"><a class="nav-link" href="/ong/evidencias"><i class="bi bi-file-earmark-check me-1"></i>Evidencias</a></li>
+                            <li class="nav-item"><a class="nav-link" href="/ong/nuevo-proyecto"><i class="bi bi-plus-lg me-1"></i>Nuevo Proyecto</a></li>
+                        }
+                    </ul>
+
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="text-light me-1">
+                            @if (esDonante)
+                            {
+                                <text>Hola, @context.User.Identity?.Name</text>
+                            }
+                            else
+                            {
+                                <text><i class="bi bi-building me-1"></i>@context.User.Identity?.Name</text>
+                            }
+                        </span>
+                        <form method="post" action="/auth/logout" class="d-inline">
+                            <button type="submit" class="btn btn-light btn-sm">Salir</button>
+                        </form>
+                    </div>
+                </div>
+            </Authorized>
+
+            <NotAuthorized>
+                <a class="navbar-brand d-flex align-items-center gap-2 fw-bold" href="/">
+                    <i class="bi bi-link-45deg fs-4"></i> TraceBlock
+                </a>
+
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMain">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <div class="collapse navbar-collapse" id="navMain">
+                    <ul class="navbar-nav me-auto">
+                        <li class="nav-item"><a class="nav-link" href="/">Inicio</a></li>
+                        <li class="nav-item"><a class="nav-link" href="/proyectos">Proyectos</a></li>
+                        <li class="nav-item"><a class="nav-link" href="/rastrear">Rastrear</a></li>
+                    </ul>
+
+                    <div class="d-flex align-items-center gap-2">
+                        <button type="button" class="btn btn-warning btn-sm fw-semibold" @onclick="Login">
+                            Iniciar sesión
+                        </button>
+                    </div>
+                </div>
+            </NotAuthorized>
+        </AuthorizeView>
+    </div>
+</nav>
+
+@code {
+    [Parameter] public EventCallback OnLoginClick { get; set; }
+
+    private async Task Login() => await OnLoginClick.InvokeAsync();
+}

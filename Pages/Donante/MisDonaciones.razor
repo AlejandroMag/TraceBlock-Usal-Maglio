@@ -1,0 +1,63 @@
+@page "/mis-donaciones"
+@attribute [Authorize(Roles = "Donante")]
+@inject DonacionService Donaciones
+
+<PageTitle>Listado de donaciones — TraceBlock</PageTitle>
+
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="fw-bold mb-0">Listado de donaciones</h2>
+        <a class="btn btn-outline-secondary btn-sm" href="/dashboard"><i class="bi bi-grid me-1"></i>Vista panel</a>
+    </div>
+
+    @if (_donaciones is null)
+    {
+        <p class="text-muted">Cargando…</p>
+    }
+    else if (_donaciones.Count == 0)
+    {
+        <div class="card"><div class="card-body text-center py-5">
+            <i class="bi bi-heart fs-1 text-muted d-block mb-3"></i>
+            <h5>Todavía no realizaste ninguna donación</h5>
+            <a class="btn btn-primary mt-2" href="/proyectos">Explorar proyectos</a>
+        </div></div>
+    }
+    else
+    {
+        <div class="card"><div class="card-body">
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead><tr>
+                        <th>Fecha</th><th>Proyecto</th><th>Monto</th><th>Token ID</th><th></th>
+                    </tr></thead>
+                    <tbody>
+                        @foreach (var d in _donaciones)
+                        {
+                            <tr>
+                                <td><small>@d.FechaDonacion.ToString("dd/MM/yyyy")</small></td>
+                                <td>@d.Proyecto.Titulo</td>
+                                <td class="text-success fw-semibold">@Fmt(d.Monto)</td>
+                                <td><TokenDisplay Token="@d.TokenId" Color="yellow" Truncar="true" /></td>
+                                <td><a class="btn btn-sm btn-outline-primary" href="/rastrear/@d.TokenId">Rastrear</a></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div></div>
+    }
+</div>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+    private static readonly CultureInfo Ar = CultureInfo.GetCultureInfo("es-AR");
+    private List<Donacion>? _donaciones;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthState;
+        _donaciones = await Donaciones.ObtenerDonacionesUsuarioAsync(state.User.GetUserId());
+    }
+
+    private static string Fmt(decimal v) => "$" + v.ToString("N0", Ar);
+}

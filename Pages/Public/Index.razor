@@ -1,0 +1,120 @@
+@page "/"
+@inject ProyectoService Proyectos
+
+<PageTitle>TraceBlock — Donaciones verificadas en blockchain</PageTitle>
+
+<!-- HERO -->
+<section class="hero d-flex align-items-center text-white">
+    <div class="container py-5">
+        <div class="row">
+            <div class="col-lg-8">
+                <h1 class="display-4 fw-bold">Tus donaciones, verificadas para siempre.</h1>
+                <p class="lead mt-3">
+                    Cada peso que donás queda registrado de forma permanente e inmutable en la
+                    blockchain de Polygon. Verificable por cualquier persona, en cualquier momento.
+                </p>
+                <div class="mt-4 d-flex flex-wrap gap-2">
+                    <a class="btn btn-warning btn-lg fw-semibold" href="/proyectos">Ver proyectos</a>
+                    <a class="btn btn-outline-light btn-lg" href="/rastrear">Rastrear donación</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ¿CÓMO FUNCIONA? -->
+<section class="container py-5">
+    <h2 class="text-center fw-bold mb-4">¿Cómo funciona?</h2>
+    <div class="d-flex flex-column flex-md-row align-items-stretch gap-2 gap-md-3">
+        <div class="how-block">
+            <i class="bi bi-credit-card-2-front fs-1 text-primary"></i>
+            <h6 class="mt-2 fw-bold">Mercado Pago</h6>
+            <small class="text-muted">Donás de forma segura con tu medio de pago habitual.</small>
+        </div>
+        <div class="how-arrow">→</div>
+        <div class="how-block">
+            <i class="bi bi-key fs-1 text-warning"></i>
+            <h6 class="mt-2 fw-bold">Token ID</h6>
+            <small class="text-muted">Se genera un identificador único de tu donación.</small>
+        </div>
+        <div class="how-arrow">→</div>
+        <div class="how-block">
+            <i class="bi bi-diagram-3 fs-1 text-info"></i>
+            <h6 class="mt-2 fw-bold">Polygon</h6>
+            <small class="text-muted">El registro se graba inmutable en la blockchain.</small>
+        </div>
+        <div class="how-arrow">→</div>
+        <div class="how-block">
+            <i class="bi bi-eye fs-1 text-success"></i>
+            <h6 class="mt-2 fw-bold">Verificás</h6>
+            <small class="text-muted">Seguís el destino y la integridad de tu aporte.</small>
+        </div>
+    </div>
+</section>
+
+<!-- STATS -->
+<section class="container pb-5">
+    <div class="row g-3">
+        <div class="col-6 col-md-3">
+            <div class="card text-center"><div class="card-body">
+                <div class="fs-3 fw-bold text-success">@Fmt(_totalRecaudado)</div>
+                <small class="text-muted">Total recaudado</small>
+            </div></div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card text-center"><div class="card-body">
+                <div class="fs-3 fw-bold text-primary">@_proyectosActivos</div>
+                <small class="text-muted">Proyectos activos</small>
+            </div></div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card text-center"><div class="card-body">
+                <div class="fs-3 fw-bold text-info">@_organizaciones</div>
+                <small class="text-muted">Organizaciones</small>
+            </div></div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card text-center"><div class="card-body">
+                <div class="fs-3 fw-bold text-warning">100%</div>
+                <small class="text-muted">Verificable</small>
+            </div></div>
+        </div>
+    </div>
+</section>
+
+<!-- PROYECTOS DESTACADOS -->
+<section class="container pb-5">
+    <h2 class="fw-bold mb-4">Proyectos destacados</h2>
+    @if (_destacados is null)
+    {
+        <p class="text-muted">Cargando…</p>
+    }
+    else
+    {
+        <div class="row g-4">
+            @foreach (var p in _destacados)
+            {
+                <div class="col-md-4"><ProyectoCard Proyecto="p" /></div>
+            }
+        </div>
+    }
+</section>
+
+@code {
+    private static readonly CultureInfo Ar = CultureInfo.GetCultureInfo("es-AR");
+    private List<Proyecto>? _destacados;
+    private decimal _totalRecaudado;
+    private int _proyectosActivos;
+    private int _organizaciones;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var activos = await Proyectos.ObtenerActivosAsync();
+        _destacados = activos.Take(3).ToList();
+        _totalRecaudado = activos.Sum(p => p.MontoRecaudado);
+        _proyectosActivos = activos.Count;
+        _organizaciones = activos.Select(p => p.OrganizacionId).Distinct().Count();
+    }
+
+    private static string Fmt(decimal v) => "$" + v.ToString("N0", Ar);
+}

@@ -1,0 +1,43 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject AppState AppState
+
+<Header OnLoginClick="MostrarLogin" />
+
+<main>
+    @Body
+</main>
+
+<Footer />
+
+<LoginModal Visible="_loginVisible" InitialTab="@_loginTab" OnCloseRequested="OcultarLogin" />
+
+@code {
+    private bool _loginVisible;
+    private string _loginTab = "login";
+
+    protected override void OnInitialized()
+    {
+        AppState.OnShowLogin += HandleShowLogin;
+    }
+
+    private void HandleShowLogin()
+    {
+        _loginTab = AppState.TabInicial;
+        _loginVisible = true;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void MostrarLogin()
+    {
+        _loginTab = "login";
+        _loginVisible = true;
+    }
+
+    private void OcultarLogin() => _loginVisible = false;
+
+    public void Dispose()
+    {
+        AppState.OnShowLogin -= HandleShowLogin;
+    }
+}

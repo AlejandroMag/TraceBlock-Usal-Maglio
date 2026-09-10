@@ -1,0 +1,50 @@
+@page "/login"
+@inject NavigationManager Nav
+
+<PageTitle>Ingresar — TraceBlock</PageTitle>
+
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-5">
+            <div class="card"><div class="card-body p-4">
+                <h3 class="fw-bold mb-3 text-center">Ingresar</h3>
+
+                @if (_error)
+                {
+                    <div class="alert alert-danger py-2">Email o contraseña incorrectos.</div>
+                }
+
+                <form method="post" action="/auth/login">
+                    <input type="hidden" name="returnUrl" value="@_returnUrl" />
+                    <div class="mb-3">
+                        <label class="form-label">Email</label>
+                        <input class="form-control" type="email" name="email" required />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Contraseña</label>
+                        <input class="form-control" type="password" name="password" required />
+                    </div>
+                    <button class="btn btn-primary w-100" type="submit">Entrar</button>
+                </form>
+
+                <p class="text-center text-muted mt-3 mb-0" style="font-size:0.85rem;">
+                    ¿No tenés cuenta? <a href="/registro">Registrate</a><br />
+                    Demo: <code>donante1@@demo.com</code> / <code>Demo1234</code>
+                </p>
+            </div></div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private bool _error;
+    private string _returnUrl = "";
+
+    protected override void OnInitialized()
+    {
+        var uri = new Uri(Nav.Uri);
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
+        _error = query.ContainsKey("error");
+        if (query.TryGetValue("returnUrl", out var rt)) _returnUrl = rt.ToString();
+    }
+}

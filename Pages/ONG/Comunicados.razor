@@ -1,0 +1,112 @@
+@page "/ong/comunicados"
+@attribute [Authorize(Roles = "Organizacion")]
+@inject AuthService Auth
+@inject ProyectoService ProyectoSvc
+@inject NavigationManager Nav
+
+<PageTitle>Comunicados — TraceBlock</PageTitle>
+
+<div class="container py-4">
+    <h2 class="fw-bold mb-4">Comunicados</h2>
+
+    @if (_proyectos is null)
+    {
+        <p class="text-muted">Cargando…</p>
+    }
+    else if (_proyectos.Count == 0)
+    {
+        <div class="alert alert-light border">No tenés proyectos todavía. <a href="/ong/nuevo-proyecto">Creá uno</a>.</div>
+    }
+    else
+    {
+        <div class="card mb-4"><div class="card-body">
+            <h6 class="fw-bold mb-3">Publicar nuevo comunicado</h6>
+            @if (!string.IsNullOrEmpty(_msg))
+            {
+                <div class="alert alert-success py-2">@_msg</div>
+            }
+            <label class="form-label small">Proyecto</label>
+            <select class="form-select mb-2" @bind="_proyectoId">
+                @foreach (var p in _proyectos)
+                {
+                    <option value="@p.Id">@p.Titulo</option>
+                }
+            </select>
+            <input class="form-control mb-2" placeholder="Título" @bind="_titulo" @bind:event="oninput" />
+            <textarea class="form-control mb-2" rows="3" placeholder="Cuerpo" @bind="_cuerpo" @bind:event="oninput"></textarea>
+            <button class="btn btn-primary" disabled="@_publicando" @onclick="Publicar">
+                @if (_publicando)
+                {
+                    <span class="spinner-border spinner-border-sm me-1"></span>
+                }
+                Publicar
+            </button>
+        </div></div>
+
+        @foreach (var p in _proyectos)
+        {
+            <div class="card mb-3"><div class="card-body">
+                <h6 class="fw-bold">@p.Titulo</h6>
+                @if (!p.Comunicados.Any())
+                {
+                    <small class="text-muted">Sin comunicados.</small>
+                }
+                else
+                {
+                    @foreach (var c in p.Comunicados.OrderByDescending(x => x.FechaPublicacion))
+                    {
+                        <div class="border-bottom py-2">
+                            <small class="text-muted">@c.FechaPublicacion.ToString("dd/MM/yyyy")</small>
+                            <div class="fw-semibold">@c.Titulo</div>
+                            <p class="small text-secondary mb-0">@c.Cuerpo</p>
+                        </div>
+                    }
+                }
+            </div></div>
+        }
+    }
+</div>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    private Organizacion? _org;
+    private List<Proyecto>? _proyectos;
+    private int _proyectoId;
+    private string _titulo = "";
+    private string _cuerpo = "";
+    private bool _publicando;
+    private string _msg = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthState;
+        _org = await Auth.ObtenerOrganizacionPorUsuarioAsync(state.User.GetUserId());
+        if (_org is null || _org.Estado != EstadoValidacion.Validada)
+        {
+            Nav.NavigateTo("/pendiente");
+            return;
+        }
+        await Recargar();
+        if (_proyectos!.Count > 0) _proyectoId = _proyectos[0].Id;
+    }
+
+    private async Task Recargar()
+    {
+        _proyectos = await ProyectoSvc.ObtenerDeOrganizacionAsync(_org!.Id);
+    }
+
+    private async Task Publicar()
+    {
+        _msg = "";
+        if (_proyectoId == 0 || string.IsNullOrWhiteSpace(_titulo) || string.IsNullOrWhiteSpace(_cuerpo)) return;
+        _publicando = true;
+        StateHasChanged();
+        await ProyectoSvc.PublicarComunicadoAsync(_proyectoId, _titulo.Trim(), _cuerpo.Trim(), _org?.NombreOrganizacion ?? "");
+        _titulo = ""; _cuerpo = "";
+        await Recargar();
+        _publicando = false;
+        _msg = "Comunicado publicado.";
+        StateHasChanged();
+    }
+}

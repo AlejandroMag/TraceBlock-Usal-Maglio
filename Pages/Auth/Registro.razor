@@ -1,0 +1,99 @@
+@page "/registro"
+@inject NavigationManager Nav
+@inject AuthService Auth
+
+<PageTitle>Registrarse — TraceBlock</PageTitle>
+
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card"><div class="card-body p-4">
+                <h3 class="fw-bold mb-3 text-center">Crear cuenta</h3>
+
+                @if (!string.IsNullOrEmpty(_error))
+                {
+                    <div class="alert alert-danger py-2">@_error</div>
+                }
+
+                <div class="btn-group w-100 mb-4" role="group">
+                    <button type="button" class="btn @(_esOng ? "btn-outline-primary" : "btn-primary")" @onclick="() => _esOng = false">Soy donante</button>
+                    <button type="button" class="btn @(_esOng ? "btn-primary" : "btn-outline-primary")" @onclick="() => _esOng = true">Represento una organización</button>
+                </div>
+
+                @if (!_esOng)
+                {
+                    <form method="post" action="/auth/registro-donante">
+                        <div class="row g-2">
+                            <div class="col"><input class="form-control" name="nombre" placeholder="Nombre" required /></div>
+                            <div class="col"><input class="form-control" name="apellido" placeholder="Apellido" required /></div>
+                        </div>
+                        <input class="form-control mt-2" type="email" name="email" placeholder="Email" required />
+                        <input class="form-control mt-2" type="password" name="password" placeholder="Contraseña" minlength="6" required />
+                        <input class="form-control mt-2" type="password" name="confirm" placeholder="Confirmar contraseña" minlength="6" required />
+                        <button class="btn btn-primary w-100 mt-3" type="submit">Registrarme</button>
+                    </form>
+                }
+                else
+                {
+                    <form method="post" action="/auth/registro-ong">
+                        <input class="form-control" name="nombreOrg" placeholder="Nombre de la organización" required />
+                        <input class="form-control mt-2" type="email" name="emailInstitucional" placeholder="Email institucional (no gmail/hotmail/etc.)" required />
+                        <div class="input-group mt-2">
+                            <input class="form-control" name="cuit" placeholder="XX-XXXXXXXX-X"
+                                   value="@_cuit" @oninput="OnCuitInput" maxlength="13" required />
+                            <span class="input-group-text bg-white">
+                                @if (string.IsNullOrEmpty(_cuit))
+                                {
+                                    <i class="bi bi-dash-circle text-muted"></i>
+                                }
+                                else if (_cuitValido)
+                                {
+                                    <i class="bi bi-check-circle-fill cuit-valid"></i>
+                                }
+                                else
+                                {
+                                    <i class="bi bi-x-circle-fill cuit-invalid"></i>
+                                }
+                            </span>
+                        </div>
+                        <input class="form-control mt-2" type="password" name="password" placeholder="Contraseña" minlength="6" required />
+                        <input class="form-control mt-2" type="password" name="confirm" placeholder="Confirmar contraseña" minlength="6" required />
+                        <button class="btn btn-primary w-100 mt-3" type="submit" disabled="@(!_cuitValido)">Registrar organización</button>
+                    </form>
+                }
+
+                <p class="text-center text-muted mt-3 mb-0" style="font-size:0.85rem;">
+                    ¿Ya tenés cuenta? <a href="/login">Ingresá</a>
+                </p>
+            </div></div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private bool _esOng;
+    private string _error = "";
+    private string _cuit = "";
+    private bool _cuitValido;
+
+    protected override void OnInitialized()
+    {
+        var uri = new Uri(Nav.Uri);
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
+        if (query.TryGetValue("error", out var err)) _error = err.ToString();
+        if (query.TryGetValue("tab", out var tab)) _esOng = tab.ToString() == "ong";
+    }
+
+    private void OnCuitInput(ChangeEventArgs e)
+    {
+        var digits = new string((e.Value?.ToString() ?? "").Where(char.IsDigit).ToArray());
+        if (digits.Length > 11) digits = digits[..11];
+
+        var formatted = digits;
+        if (digits.Length > 2) formatted = digits[..2] + "-" + digits[2..];
+        if (digits.Length > 10) formatted = digits[..2] + "-" + digits[2..10] + "-" + digits[10..];
+
+        _cuit = formatted;
+        _cuitValido = Auth.ValidarDigitoVerificadorCUIT(_cuit);
+    }
+}

@@ -1,0 +1,89 @@
+@page "/proyectos"
+@inject ProyectoService ProyectoSvc
+
+<PageTitle>Proyectos — TraceBlock</PageTitle>
+
+<div class="container py-4">
+    <h1 class="fw-bold mb-4">Proyectos</h1>
+    <div class="row g-4">
+        <!-- FILTROS -->
+        <div class="col-lg-3">
+            <div class="card"><div class="card-body">
+                <h6 class="fw-bold mb-3">Filtros</h6>
+
+                <label class="form-label small">Categoría</label>
+                <select class="form-select form-select-sm mb-3" value="@_categoria" @onchange="OnCategoria">
+                    <option value="">Todas</option>
+                    @foreach (var c in Categorias)
+                    {
+                        <option value="@c">@c</option>
+                    }
+                </select>
+
+                <label class="form-label small">Ciudad</label>
+                <input class="form-control form-control-sm mb-3" placeholder="Ciudad"
+                       value="@_ciudad" @oninput="OnCiudad" />
+
+                <label class="form-label small">Buscar</label>
+                <input class="form-control form-control-sm mb-3" placeholder="Título o descripción"
+                       value="@_buscar" @oninput="OnBuscar" />
+
+                <button class="btn btn-outline-secondary btn-sm w-100" @onclick="Limpiar">Limpiar filtros</button>
+            </div></div>
+        </div>
+
+        <!-- GRID -->
+        <div class="col-lg-9">
+            @if (_resultado is null)
+            {
+                <p class="text-muted">Cargando…</p>
+            }
+            else if (_resultado.Count == 0)
+            {
+                <div class="alert alert-light text-center py-5 border">
+                    <i class="bi bi-search fs-1 text-muted d-block mb-2"></i>
+                    No hay proyectos que coincidan
+                </div>
+            }
+            else
+            {
+                <div class="row g-4">
+                    @foreach (var p in _resultado)
+                    {
+                        <div class="col-md-6 col-xl-4"><ProyectoCard Proyecto="p" /></div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private static readonly string[] Categorias =
+        { "Alimentación", "Educación", "Salud", "Vivienda", "Medioambiente", "Tecnología", "Otro" };
+
+    private List<Proyecto>? _resultado;
+    private string _categoria = "";
+    private string _ciudad = "";
+    private string _buscar = "";
+
+    protected override async Task OnInitializedAsync() => await Recargar();
+
+    private async Task Recargar()
+    {
+        _resultado = await ProyectoSvc.ObtenerActivosAsync(
+            string.IsNullOrWhiteSpace(_categoria) ? null : _categoria,
+            string.IsNullOrWhiteSpace(_ciudad) ? null : _ciudad,
+            string.IsNullOrWhiteSpace(_buscar) ? null : _buscar);
+    }
+
+    private async Task OnCategoria(ChangeEventArgs e) { _categoria = e.Value?.ToString() ?? ""; await Recargar(); }
+    private async Task OnCiudad(ChangeEventArgs e) { _ciudad = e.Value?.ToString() ?? ""; await Recargar(); }
+    private async Task OnBuscar(ChangeEventArgs e) { _buscar = e.Value?.ToString() ?? ""; await Recargar(); }
+
+    private async Task Limpiar()
+    {
+        _categoria = ""; _ciudad = ""; _buscar = "";
+        await Recargar();
+    }
+}

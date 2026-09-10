@@ -1,0 +1,51 @@
+@inject IJSRuntime JS
+
+<div class="mb-2">
+    @if (!string.IsNullOrEmpty(Label))
+    {
+        <div class="text-uppercase text-secondary" style="font-size:0.7rem; letter-spacing:0.05em;">@Label</div>
+    }
+    <div class="d-flex align-items-center gap-2">
+        <span class="@CssClass">@Display</span>
+        <button class="btn-copy text-secondary" type="button" title="Copiar" @onclick="Copiar">
+            @if (_copiado)
+            {
+                <i class="bi bi-check-lg text-success"></i> <small class="text-success">¡Copiado!</small>
+            }
+            else
+            {
+                <i class="bi bi-clipboard"></i>
+            }
+        </button>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Token { get; set; } = "";
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public string Color { get; set; } = "yellow";
+    [Parameter] public bool Truncar { get; set; } = false;
+
+    private bool _copiado;
+
+    private string CssClass => Color switch
+    {
+        "cyan" => "token-cyan",
+        "green" => "token-green",
+        _ => "token-yellow"
+    };
+
+    private string Display => Truncar && Token.Length >= 16
+        ? Token[..10] + "…" + Token[^8..]
+        : Token;
+
+    private async Task Copiar()
+    {
+        await JS.InvokeVoidAsync("copyToClipboard", Token);
+        _copiado = true;
+        StateHasChanged();
+        await Task.Delay(2000);
+        _copiado = false;
+        StateHasChanged();
+    }
+}

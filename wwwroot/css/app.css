@@ -1,0 +1,44 @@
+body { background: #f8f9fb; font-family: 'Segoe UI', system-ui, sans-serif; }
+.hero { background: linear-gradient(135deg, #1a1a2e 0%, #0f3460 100%); min-height: 480px; }
+.navbar-dark-custom { background: #1a1a2e !important; }
+.card { border: none !important; border-radius: 1rem !important;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+.token-yellow { font-family: monospace; color: #ffc107; word-break: break-all; }
+.token-cyan { font-family: monospace; color: #0dcaf0; word-break: break-all; }
+.token-green { font-family: monospace; color: #20c997; word-break: break-all; }
+.blockchain-card { background: #1a1a2e; border-radius: 0.75rem; padding: 1.25rem; }
+.btn-copy { background: transparent; border: none; cursor: pointer; padding: 0 0.4rem; }
+.step-done { color: #198754; }
+.step-active { color: #0d6efd; font-weight: 600; }
+.step-pending { color: #6c757d; }
+.hito-done::before { content: "✓"; color: #198754; margin-right: 0.5rem; }
+.hito-pending::before { content: "◷"; color: #6c757d; margin-right: 0.5rem; }
+.comunicado-avatar { width: 40px; height: 40px; border-radius: 50%;
+  background: #0d6efd; color: white; display: flex; align-items: center;
+  justify-content: center; font-weight: bold; font-size: 0.875rem; flex-shrink: 0; }
+.fade-check { animation: fadeCheck 0.5s ease forwards; }
+@keyframes fadeCheck { from { transform: scale(0); opacity: 0; }
+  to { transform: scale(1); opacity: 1; } }
+footer { background: white; border-top: 1px solid #e9ecef; }
+.sidebar { min-width: 220px; background: white;
+  border-right: 1px solid #e9ecef; min-height: calc(100vh - 56px); }
+.sidebar .nav-link { color: #495057; border-radius: 0.5rem; margin: 2px 0; }
+.sidebar .nav-link.active { background: #e8f0fe; color: #0d6efd; font-weight: 600; }
+#blazor-error-ui { background: lightyellow; bottom: 0; display: none;
+  left: 0; padding: 0.5rem 1rem; position: fixed; width: 100%; z-index: 9999; }
+
+/* ---- Extras de soporte ---- */
+.how-block { background: white; border-radius: 1rem; padding: 1.5rem; text-align: center;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.08); flex: 1; }
+.how-arrow { font-size: 1.5rem; color: #ffc107; display: flex; align-items: center; }
+.monto-quick { border: 1px solid #ced4da; background: white; border-radius: 0.5rem;
+  padding: 0.5rem 0.25rem; cursor: pointer; font-weight: 600; }
+.monto-quick.active { border-color: #0d6efd; background: #e8f0fe; color: #0d6efd; }
+.timeline-dot { width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0; margin-top: 3px; }
+.timeline-dot.done { background: #198754; }
+.timeline-dot.pending { background: #adb5bd; }
+.timeline-line { width: 2px; background: #e9ecef; flex: 1; margin: 4px auto; }
+.cuit-valid { color: #198754; }
+.cuit-invalid { color: #dc3545; }
+.sticky-donate { position: sticky; top: 76px; }
+.leaflet-container { border-radius: 0.75rem; }

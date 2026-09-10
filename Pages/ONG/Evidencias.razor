@@ -1,0 +1,84 @@
+@page "/ong/evidencias"
+@attribute [Authorize(Roles = "Organizacion")]
+@inject AuthService Auth
+@inject ProyectoService ProyectoSvc
+@inject NavigationManager Nav
+
+<PageTitle>Evidencias — TraceBlock</PageTitle>
+
+<div class="container py-4">
+    <h2 class="fw-bold mb-4">Evidencias</h2>
+
+    @if (_proyectos is null)
+    {
+        <p class="text-muted">Cargando…</p>
+    }
+    else if (_proyectos.Count == 0)
+    {
+        <div class="alert alert-light border">No tenés proyectos todavía. <a href="/ong/nuevo-proyecto">Creá uno</a>.</div>
+    }
+    else
+    {
+        <div class="card mb-4"><div class="card-body">
+            <label class="form-label small">Proyecto</label>
+            <select class="form-select mb-3" @bind="_proyectoId">
+                @foreach (var p in _proyectos)
+                {
+                    <option value="@p.Id">@p.Titulo</option>
+                }
+            </select>
+            <SubirEvidencia ProyectoId="_proyectoId" OnSubida="async _ => await Recargar()" />
+        </div></div>
+
+        @foreach (var p in _proyectos)
+        {
+            <div class="card mb-3"><div class="card-body">
+                <h6 class="fw-bold">@p.Titulo</h6>
+                @if (!p.Evidencias.Any())
+                {
+                    <small class="text-muted">Sin evidencias.</small>
+                }
+                else
+                {
+                    @foreach (var ev in p.Evidencias.OrderByDescending(x => x.SubidoEn))
+                    {
+                        <div class="border-bottom py-2">
+                            <div class="small"><i class="bi bi-file-earmark-text me-1"></i>@ev.NombreArchivo
+                                <span class="badge bg-secondary-subtle text-secondary-emphasis">@ev.TipoEvidencia</span>
+                                <span class="text-muted">· @ev.SubidoEn.ToString("dd/MM/yyyy")</span></div>
+                            <p class="small text-muted mb-1">@ev.Descripcion</p>
+                            <TokenDisplay Token="@ev.HashSHA256" Label="SHA-256" Color="green" Truncar="true" />
+                            <TokenDisplay Token="@ev.TxHashBlockchain" Label="TxHash (Polygon)" Color="cyan" Truncar="true" />
+                        </div>
+                    }
+                }
+            </div></div>
+        }
+    }
+</div>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    private Organizacion? _org;
+    private List<Proyecto>? _proyectos;
+    private int _proyectoId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthState;
+        _org = await Auth.ObtenerOrganizacionPorUsuarioAsync(state.User.GetUserId());
+        if (_org is null || _org.Estado != EstadoValidacion.Validada)
+        {
+            Nav.NavigateTo("/pendiente");
+            return;
+        }
+        await Recargar();
+        if (_proyectos!.Count > 0) _proyectoId = _proyectos[0].Id;
+    }
+
+    private async Task Recargar()
+    {
+        _proyectos = await ProyectoSvc.ObtenerDeOrganizacionAsync(_org!.Id);
+    }
+}

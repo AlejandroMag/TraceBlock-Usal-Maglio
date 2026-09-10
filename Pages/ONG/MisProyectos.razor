@@ -1,0 +1,198 @@
+@page "/ong/proyectos"
+@attribute [Authorize(Roles = "Organizacion")]
+@inject AuthService Auth
+@inject ProyectoService ProyectoSvc
+@inject NavigationManager Nav
+
+<PageTitle>Mis Proyectos — TraceBlock</PageTitle>
+
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="fw-bold mb-0">Mis Proyectos</h2>
+        <a class="btn btn-primary" href="/ong/nuevo-proyecto"><i class="bi bi-plus-lg me-1"></i>Nuevo Proyecto</a>
+    </div>
+
+    @if (_proyectos is null)
+    {
+        <p class="text-muted">Cargando…</p>
+    }
+    else if (_proyectos.Count == 0)
+    {
+        <div class="card"><div class="card-body text-center py-5">
+            <i class="bi bi-folder2-open fs-1 text-muted d-block mb-3"></i>
+            <h5>Todavía no creaste ningún proyecto</h5>
+            <a class="btn btn-primary mt-2" href="/ong/nuevo-proyecto">Crear el primero</a>
+        </div></div>
+    }
+    else
+    {
+        @foreach (var p in _proyectos)
+        {
+            <div class="card mb-4"><div class="card-body">
+                <div class="d-flex justify-content-between align-items-start flex-wrap">
+                    <div>
+                        <h5 class="mb-1">@p.Titulo</h5>
+                        <span class="badge @EstadoBadge(p.Estado)">@p.Estado</span>
+                        <span class="badge bg-info-subtle text-info-emphasis ms-1">@p.Categoria</span>
+                    </div>
+                    <div class="text-end small text-muted">
+                        <div><i class="bi bi-heart"></i> @p.Donaciones.Count donaciones</div>
+                        <div><i class="bi bi-file-earmark"></i> @p.Evidencias.Count evidencias</div>
+                        <div><i class="bi bi-megaphone"></i> @p.Comunicados.Count comunicados</div>
+                    </div>
+                </div>
+
+                <div class="my-3"><ProgressBar Porcentaje="p.PorcentajeAvance" Recaudado="p.MontoRecaudado" Objetivo="p.MontoObjetivo" /></div>
+
+                <div class="d-flex flex-wrap gap-2">
+                    <button class="btn btn-sm btn-outline-dark" @onclick="() => ToggleDetalle(p.Id)">
+                        <i class="bi bi-@(_expandido.Contains(p.Id) ? "chevron-up" : "chevron-down") me-1"></i>Ver detalle
+                    </button>
+                    <a class="btn btn-sm btn-outline-secondary" href="/proyecto/@p.Id">Ver público</a>
+                </div>
+
+                @if (_expandido.Contains(p.Id))
+                {
+                    <div class="border-top mt-3 pt-3">
+                        <!-- HITOS -->
+                        <h6 class="fw-bold">Hitos</h6>
+                        @foreach (var h in p.Hitos.OrderBy(x => x.Orden))
+                        {
+                            <div class="d-flex justify-content-between align-items-center border-bottom py-2">
+                                <div>
+                                    <span class="@(h.Completado ? "hito-done" : "hito-pending")">@h.Titulo</span>
+                                    @if (h.Completado && h.FechaCompletado is not null)
+                                    {
+                                        <small class="text-success ms-2">@h.FechaCompletado.Value.ToString("dd/MM/yyyy")</small>
+                                    }
+                                </div>
+                                @if (!h.Completado)
+                                {
+                                    <button class="btn btn-sm btn-outline-success" disabled="@_hitoLoading.Contains(h.Id)"
+                                            @onclick="() => MarcarHito(h.Id)">
+                                        @if (_hitoLoading.Contains(h.Id))
+                                        {
+                                            <span class="spinner-border spinner-border-sm"></span>
+                                        }
+                                        else { <text>Marcar completado</text> }
+                                    </button>
+                                }
+                            </div>
+                        }
+
+                        <!-- COMUNICADOS -->
+                        <h6 class="fw-bold mt-4">Comunicados</h6>
+                        @foreach (var c in p.Comunicados.OrderByDescending(x => x.FechaPublicacion))
+                        {
+                            <div class="mb-2">
+                                <small class="text-muted">@c.FechaPublicacion.ToString("dd/MM/yyyy")</small>
+                                <div class="fw-semibold">@c.Titulo</div>
+                                <p class="small text-secondary mb-1">@c.Cuerpo</p>
+                            </div>
+                        }
+                        <div class="bg-light rounded p-3 mt-2">
+                            <input class="form-control form-control-sm mb-2" placeholder="Título del comunicado"
+                                   value="@GetTitulo(p.Id)" @oninput="e => SetTitulo(p.Id, e)" />
+                            <textarea class="form-control form-control-sm mb-2" rows="2" placeholder="Cuerpo"
+                                      value="@GetCuerpo(p.Id)" @oninput="e => SetCuerpo(p.Id, e)"></textarea>
+                            <button class="btn btn-sm btn-primary" disabled="@_pubLoading.Contains(p.Id)"
+                                    @onclick="() => Publicar(p)">
+                                @if (_pubLoading.Contains(p.Id))
+                                {
+                                    <span class="spinner-border spinner-border-sm"></span>
+                                }
+                                else { <text>Publicar</text> }
+                            </button>
+                        </div>
+
+                        <!-- EVIDENCIAS -->
+                        <h6 class="fw-bold mt-4">Evidencias</h6>
+                        @foreach (var ev in p.Evidencias)
+                        {
+                            <div class="mb-2">
+                                <div class="small"><i class="bi bi-file-earmark-text me-1"></i>@ev.NombreArchivo
+                                    <span class="badge bg-secondary-subtle text-secondary-emphasis">@ev.TipoEvidencia</span></div>
+                                <TokenDisplay Token="@ev.HashSHA256" Label="SHA-256" Color="green" Truncar="true" />
+                                <TokenDisplay Token="@ev.TxHashBlockchain" Label="TxHash" Color="cyan" Truncar="true" />
+                            </div>
+                        }
+                        <SubirEvidencia ProyectoId="p.Id" OnSubida="async _ => await Recargar()" />
+                    </div>
+                }
+            </div></div>
+        }
+    }
+</div>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    private Organizacion? _org;
+    private List<Proyecto>? _proyectos;
+    private readonly HashSet<int> _expandido = new();
+    private readonly HashSet<int> _hitoLoading = new();
+    private readonly HashSet<int> _pubLoading = new();
+    private readonly Dictionary<int, string> _nuevoTitulo = new();
+    private readonly Dictionary<int, string> _nuevoCuerpo = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthState;
+        _org = await Auth.ObtenerOrganizacionPorUsuarioAsync(state.User.GetUserId());
+        if (_org is null || _org.Estado != EstadoValidacion.Validada)
+        {
+            Nav.NavigateTo("/pendiente");
+            return;
+        }
+        await Recargar();
+    }
+
+    private async Task Recargar()
+    {
+        if (_org is null) return;
+        _proyectos = await ProyectoSvc.ObtenerDeOrganizacionAsync(_org.Id);
+    }
+
+    private void ToggleDetalle(int id)
+    {
+        if (!_expandido.Add(id)) _expandido.Remove(id);
+    }
+
+    private async Task MarcarHito(int hitoId)
+    {
+        _hitoLoading.Add(hitoId);
+        StateHasChanged();
+        await ProyectoSvc.MarcarHitoCompletadoAsync(hitoId);
+        await Recargar();
+        _hitoLoading.Remove(hitoId);
+        StateHasChanged();
+    }
+
+    private async Task Publicar(Proyecto p)
+    {
+        var titulo = GetTitulo(p.Id).Trim();
+        var cuerpo = GetCuerpo(p.Id).Trim();
+        if (string.IsNullOrEmpty(titulo) || string.IsNullOrEmpty(cuerpo)) return;
+
+        _pubLoading.Add(p.Id);
+        StateHasChanged();
+        await ProyectoSvc.PublicarComunicadoAsync(p.Id, titulo, cuerpo, _org?.NombreOrganizacion ?? "");
+        _nuevoTitulo[p.Id] = "";
+        _nuevoCuerpo[p.Id] = "";
+        await Recargar();
+        _pubLoading.Remove(p.Id);
+        StateHasChanged();
+    }
+
+    private string GetTitulo(int id) => _nuevoTitulo.TryGetValue(id, out var v) ? v : "";
+    private string GetCuerpo(int id) => _nuevoCuerpo.TryGetValue(id, out var v) ? v : "";
+    private void SetTitulo(int id, ChangeEventArgs e) => _nuevoTitulo[id] = e.Value?.ToString() ?? "";
+    private void SetCuerpo(int id, ChangeEventArgs e) => _nuevoCuerpo[id] = e.Value?.ToString() ?? "";
+
+    private static string EstadoBadge(EstadoProyecto e) => e switch
+    {
+        EstadoProyecto.Activo => "bg-success",
+        EstadoProyecto.Pausado => "bg-warning text-dark",
+        _ => "bg-secondary"
+    };
+}
