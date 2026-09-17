@@ -10,8 +10,6 @@ public class Organizacion
     public string EmailInstitucional { get; set; } = "";
     public EstadoValidacion Estado { get; set; } = EstadoValidacion.Pendiente;
     public DateTime? FechaValidacion { get; set; }
-    public string? HashPdfCenoc { get; set; }
-    public string? UrlPdfCenoc { get; set; }
     public string Descripcion { get; set; } = "";
     public double? LatitudSede { get; set; }
     public double? LongitudSede { get; set; }

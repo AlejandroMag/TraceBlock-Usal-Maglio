@@ -1,8 +1,6 @@
 using Microsoft.EntityFrameworkCore;
-using TrazeaBlock.Configuration;
 using TrazeaBlock.Data;
 using TrazeaBlock.Models;
-using TrazeaBlock.Services.Interfaces;
 
 namespace TrazeaBlock.Services;
 
@@ -90,6 +88,20 @@ public class AuthService
         if (!ValidarDigitoVerificadorCUIT(cuit))
             return (false, "El CUIT ingresado no es válido (dígito verificador incorrecto).");
 
+        // El CUIT tiene que figurar en el padrón oficial de organizaciones sin fines de lucro.
+        var padron = await BuscarEnPadronAsync(cuit);
+        if (padron is null)
+            return (false, "El CUIT no figura en el Registro Nacional de Sociedades y Asociaciones sin Fines de Lucro. " +
+                           "Verificá el número o consultá si tu organización está inscripta.");
+
+        // El dominio del mail institucional tiene que parecerse a la razón social del padrón.
+        if (!SimilitudDominio.Coincide(emailInstitucional, padron.RazonSocial, out var esperadas))
+        {
+            var pistas = esperadas.Length > 0 ? string.Join(", ", esperadas) : padron.RazonSocial;
+            return (false, $"El dominio del mail institucional no se corresponde con «{padron.RazonSocial}». " +
+                           $"Se esperaba que incluyera alguna de estas palabras: {pistas}.");
+        }
+
         var usuario = new Usuario
         {
             Nombre = nombreOrg.Trim(),
@@ -101,18 +113,29 @@ public class AuthService
         _db.Usuarios.Add(usuario);
         await _db.SaveChangesAsync();
 
+        // Validada en el acto: el padrón oficial ya acredita a la organización.
         var org = new Organizacion
         {
             UsuarioId = usuario.Id,
             NombreOrganizacion = nombreOrg.Trim(),
             CUIT = cuit.Trim(),
             EmailInstitucional = emailInstitucional,
-            Estado = EstadoValidacion.Pendiente
+            Estado = EstadoValidacion.Validada,
+            FechaValidacion = DateTime.UtcNow,
+            CiudadSede = padron.Localidad
         };
         _db.Organizaciones.Add(org);
         await _db.SaveChangesAsync();
 
         return (true, null);
+    }
+
+    /// <summary>Busca un CUIT en el padrón oficial. Acepta el CUIT con o sin guiones.</summary>
+    public async Task<PadronOng?> BuscarEnPadronAsync(string cuit)
+    {
+        var limpio = new string((cuit ?? "").Where(char.IsDigit).ToArray());
+        if (limpio.Length != 11) return null;
+        return await _db.PadronOngs.FirstOrDefaultAsync(p => p.Cuit == limpio);
     }
 
     public bool ValidarDigitoVerificadorCUIT(string cuit)
@@ -137,37 +160,4 @@ public class AuthService
         return verificador == digitoReal;
     }
 
-    public async Task<(bool exito, string? error)> ValidarCenocAsync(
-        int usuarioId, byte[] pdfBytes, IAfipService afip, ICenocService cenoc,
-        ValidacionesConfig config, HashingService hasher)
-    {
-        var org = await _db.Organizaciones
-            .FirstOrDefaultAsync(o => o.UsuarioId == usuarioId);
-        if (org is null) return (false, "No se encontró la organización asociada.");
-
-        if (pdfBytes is null || pdfBytes.Length == 0)
-            return (false, "El archivo PDF está vacío.");
-
-        var hash = hasher.CalcularSHA256(pdfBytes);
-
-        if (config.ValidarCUITconAFIP)
-        {
-            var afipResult = await afip.ValidarCUIT(org.CUIT);
-            if (!afipResult.Valido)
-                return (false, afipResult.Error ?? "El CUIT no pudo validarse ante AFIP.");
-        }
-
-        if (config.ValidarCENOC)
-        {
-            var cenocResult = await cenoc.ValidarOrganizacion(org.CUIT, pdfBytes);
-            if (!cenocResult.Registrada)
-                return (false, cenocResult.Error ?? "La organización no figura registrada ante el CENOC.");
-        }
-
-        org.HashPdfCenoc = hash;
-        org.Estado = EstadoValidacion.Validada;
-        org.FechaValidacion = DateTime.UtcNow;
-        await _db.SaveChangesAsync();
-        return (true, null);
-    }
 }

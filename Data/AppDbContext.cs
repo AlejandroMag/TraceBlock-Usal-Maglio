@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using TrazeaBlock.Models;
 
 namespace TrazeaBlock.Data;
@@ -16,16 +17,17 @@ public class AppDbContext : DbContext
     public DbSet<Comunicado> Comunicados => Set<Comunicado>();
     public DbSet<OrgMercadoPago> OrgMercadoPagos => Set<OrgMercadoPago>();
     public DbSet<DonacionPendiente> DonacionesPendientes => Set<DonacionPendiente>();
+    public DbSet<PadronOng> PadronOngs => Set<PadronOng>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
 
         // Decimales con precisión monetaria
-        modelBuilder.Entity<Proyecto>().Property(p => p.MontoObjetivo).HasColumnType("decimal(18,2)");
-        modelBuilder.Entity<Proyecto>().Property(p => p.MontoRecaudado).HasColumnType("decimal(18,2)");
-        modelBuilder.Entity<Hito>().Property(h => h.MontoReferencia).HasColumnType("decimal(18,2)");
-        modelBuilder.Entity<Donacion>().Property(d => d.Monto).HasColumnType("decimal(18,2)");
+        modelBuilder.Entity<Proyecto>().Property(p => p.MontoObjetivo).HasPrecision(18, 2);
+        modelBuilder.Entity<Proyecto>().Property(p => p.MontoRecaudado).HasPrecision(18, 2);
+        modelBuilder.Entity<Hito>().Property(h => h.MontoReferencia).HasPrecision(18, 2);
+        modelBuilder.Entity<Donacion>().Property(d => d.Monto).HasPrecision(18, 2);
 
         // Propiedad calculada no mapeada
         modelBuilder.Entity<Proyecto>().Ignore(p => p.PorcentajeAvance);
@@ -90,7 +92,35 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<OrgMercadoPago>()
             .HasIndex(m => m.OrganizacionId).IsUnique();
 
-        modelBuilder.Entity<DonacionPendiente>().Property(d => d.Monto).HasColumnType("decimal(18,2)");
+        modelBuilder.Entity<DonacionPendiente>().Property(d => d.Monto).HasPrecision(18, 2);
         modelBuilder.Entity<DonacionPendiente>().HasIndex(d => d.TokenId).IsUnique();
+
+        // Padrón oficial de ONGs: búsqueda por CUIT, una fila por CUIT
+        modelBuilder.Entity<PadronOng>().Property(p => p.Cuit).HasMaxLength(11);
+        modelBuilder.Entity<PadronOng>().HasIndex(p => p.Cuit).IsUnique();
+
+        // Postgres (timestamptz) exige DateTime con Kind=Utc. Se normalizan todas las fechas:
+        // al escribir pasan a UTC (las Unspecified de los <input type="date"> se toman como UTC
+        // para no correr el día) y al leer vuelven marcadas como Utc.
+        var utc = new ValueConverter<DateTime, DateTime>(
+            v => ToUtc(v),
+            v => DateTime.SpecifyKind(v, DateTimeKind.Utc));
+        var utcNullable = new ValueConverter<DateTime?, DateTime?>(
+            v => v.HasValue ? ToUtc(v.Value) : v,
+            v => v.HasValue ? DateTime.SpecifyKind(v.Value, DateTimeKind.Utc) : v);
+
+        foreach (var entity in modelBuilder.Model.GetEntityTypes())
+        foreach (var property in entity.GetProperties())
+        {
+            if (property.ClrType == typeof(DateTime)) property.SetValueConverter(utc);
+            else if (property.ClrType == typeof(DateTime?)) property.SetValueConverter(utcNullable);
+        }
     }
+
+    private static DateTime ToUtc(DateTime v) => v.Kind switch
+    {
+        DateTimeKind.Utc => v,
+        DateTimeKind.Local => v.ToUniversalTime(),
+        _ => DateTime.SpecifyKind(v, DateTimeKind.Utc)
+    };
 }

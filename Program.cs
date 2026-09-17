@@ -10,11 +10,35 @@ using TrazeaBlock.Services.Interfaces;
 using TrazeaBlock.Services.MercadoPago;
 using TrazeaBlock.Services.Mock;
 
-var builder = WebApplication.CreateBuilder(args);
+// Comando de mantenimiento para cargar el padrón oficial de ONGs:
+//   dotnet run -- importar-padron "C:\ruta\registro-nacional.csv"
+var rutaPadron = args.Length >= 2 && args[0] == "importar-padron" ? args[1] : null;
 
-// 1. DbContext
+var builder = WebApplication.CreateBuilder(rutaPadron is null ? args : Array.Empty<string>());
+
+if (rutaPadron is not null)
+{
+    var cs = builder.Configuration.GetConnectionString("DefaultConnection")
+        ?? throw new InvalidOperationException("Falta la connection string 'DefaultConnection'.");
+
+    // Aseguramos que el esquema exista antes de importar.
+    var opciones = new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(cs).Options;
+    await using (var db = new AppDbContext(opciones))
+        await db.Database.MigrateAsync();
+
+    Console.WriteLine($"Importando padrón desde: {rutaPadron}");
+    var reloj = System.Diagnostics.Stopwatch.StartNew();
+    var (orgs, filas) = await PadronImportService.ImportarAsync(cs, rutaPadron);
+    Console.WriteLine($"Listo en {reloj.Elapsed.TotalSeconds:N1}s — {filas:N0} filas leídas, " +
+                      $"{orgs:N0} organizaciones cargadas (una por CUIT).");
+    return;
+}
+
+// 1. DbContext (PostgreSQL). El retry cubre el arranque en Docker, donde la app
+// puede levantar antes de que la base acepte conexiones.
 builder.Services.AddDbContext<AppDbContext>(o =>
-    o.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
+    o.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"),
+        npgsql => npgsql.EnableRetryOnFailure()));
 
 // 2. Configuración de validaciones (fuertemente tipada)
 var validacionesConfig = builder.Configuration
@@ -23,8 +47,6 @@ var validacionesConfig = builder.Configuration
 builder.Services.AddSingleton(validacionesConfig);
 
 // 3. Servicios externos (mock por ahora; se swapean por reales cuando los flags sean true)
-builder.Services.AddScoped<IAfipService, MockAfipService>();
-builder.Services.AddScoped<ICenocService, MockCenocService>();
 builder.Services.AddScoped<IGeoService, MockGeoService>();
 builder.Services.AddScoped<IBlockchainService, MockBlockchainService>();
 
@@ -70,11 +92,11 @@ builder.Services.AddServerSideBlazor();
 // 7. Build
 var app = builder.Build();
 
-// 8. Migrate + Seed
+// 8. Migrate + Seed: aplica las migraciones pendientes y después carga los datos de demo
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.EnsureCreated();
+    db.Database.Migrate();
     DbSeeder.Seed(db);
 }
 

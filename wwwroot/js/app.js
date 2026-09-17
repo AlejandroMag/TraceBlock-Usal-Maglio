@@ -45,6 +45,17 @@ window.renderLineChart = (canvasId, labels, datasets) => {
     });
 };
 
+// Capa base de los mapas.
+// Se usan los tiles de CARTO (sirven datos de OpenStreetMap): los servidores de tiles
+// de OSM son voluntarios y bloquean el uso que no sigue su política, además de tener
+// deprecado el esquema {s}.tile.openstreetmap.org. La atribución sigue siendo obligatoria.
+window.capaBase = () => L.tileLayer(
+    'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        subdomains: 'abcd',
+        maxZoom: 20,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+    });
+
 // Leaflet map init
 window.initMap = (containerId, lat, lon, dotnetHelper) => {
     if (window._leafletMap) {
@@ -52,9 +63,7 @@ window.initMap = (containerId, lat, lon, dotnetHelper) => {
         window._leafletMap = null;
     }
     const map = L.map(containerId).setView([lat, lon], 13);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap'
-    }).addTo(map);
+    window.capaBase().addTo(map);
     window._leafletMap = map;
     window._leafletMarker = null;
     map.on('click', (e) => {
@@ -79,9 +88,7 @@ window.showLocationMap = (containerId, lat, lon, label) => {
         window._displayMaps[containerId] = null;
     }
     const map = L.map(containerId, { scrollWheelZoom: false }).setView([lat, lon], 14);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap'
-    }).addTo(map);
+    window.capaBase().addTo(map);
     const marker = L.marker([lat, lon]).addTo(map);
     if (label) marker.bindPopup(label).openPopup();
     window._displayMaps[containerId] = map;
