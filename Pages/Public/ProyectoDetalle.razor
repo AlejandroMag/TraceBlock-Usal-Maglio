@@ -122,24 +122,20 @@ else
                                         <td><i class="bi bi-file-earmark-text me-1"></i>@ev.NombreArchivo</td>
                                         <td><span class="badge bg-secondary-subtle text-secondary-emphasis">@ev.TipoEvidencia</span></td>
                                         <td><TokenDisplay Token="@ev.HashSHA256" Color="green" Truncar="true" /></td>
-                                        <td><TokenDisplay Token="@ev.TxHashBlockchain" Color="cyan" Truncar="true" /></td>
-                                        <td><small>@ev.SubidoEn.ToString("dd/MM/yyyy")</small></td>
                                         <td>
-                                            @if (_verifEvidencia.TryGetValue(ev.Id, out var estado) && estado != null)
+                                            @if (!string.IsNullOrEmpty(ev.TxHashBlockchain))
                                             {
-                                                <BlockchainBadge Verificado="estado.Value" />
+                                                <TokenDisplay Token="@ev.TxHashBlockchain" Color="cyan" Truncar="true" />
                                             }
                                             else
                                             {
-                                                <button class="btn btn-sm btn-outline-primary" disabled="@_verifLoading.Contains(ev.Id)"
-                                                        @onclick="() => VerificarEvidencia(ev)">
-                                                    @if (_verifLoading.Contains(ev.Id))
-                                                    {
-                                                        <span class="spinner-border spinner-border-sm"></span>
-                                                    }
-                                                    else { <text>Verificar</text> }
-                                                </button>
+                                                <small class="text-muted">pendiente</small>
                                             }
+                                        </td>
+                                        <td><small>@ev.SubidoEn.ToString("dd/MM/yyyy")</small></td>
+                                        <td>
+                                            <BlockchainEstado @key="ev.Id" Red="@ev.RedBlockchain" Estado="@ev.EstadoBlockchain" TxHash="@ev.TxHashBlockchain"
+                                                              Verificar="@(() => Blockchain.VerificarEvidencia(ev.TxHashBlockchain, ev.HashSHA256, ev.ProyectoId))" />
                                         </td>
                                     </tr>
                                 }
@@ -212,8 +208,6 @@ else
 
     private Proyecto? _proyecto;
     private decimal _monto = 1000;
-    private readonly Dictionary<int, bool?> _verifEvidencia = new();
-    private readonly HashSet<int> _verifLoading = new();
     private bool _mapRendered;
 
     private bool _tieneUbicacion => _proyecto is not null
@@ -249,16 +243,6 @@ else
             return;
         }
         Nav.NavigateTo($"/donar/{Id}");
-    }
-
-    private async Task VerificarEvidencia(Evidencia ev)
-    {
-        _verifLoading.Add(ev.Id);
-        StateHasChanged();
-        var result = await Blockchain.VerificarTransaccion(ev.TxHashBlockchain);
-        _verifLoading.Remove(ev.Id);
-        _verifEvidencia[ev.Id] = result.Valido;
-        StateHasChanged();
     }
 
     private static string Fmt(decimal v) => "$" + v.ToString("N0", Ar);

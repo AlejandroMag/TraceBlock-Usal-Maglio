@@ -3,6 +3,7 @@
 @inject AuthService Auth
 @inject ProyectoService ProyectoSvc
 @inject NavigationManager Nav
+@inject IBlockchainService Blockchain
 
 <PageTitle>Mis Proyectos — TraceBlock</PageTitle>
 
@@ -113,7 +114,12 @@
                                 <div class="small"><i class="bi bi-file-earmark-text me-1"></i>@ev.NombreArchivo
                                     <span class="badge bg-secondary-subtle text-secondary-emphasis">@ev.TipoEvidencia</span></div>
                                 <TokenDisplay Token="@ev.HashSHA256" Label="SHA-256" Color="green" Truncar="true" />
-                                <TokenDisplay Token="@ev.TxHashBlockchain" Label="TxHash" Color="cyan" Truncar="true" />
+                                @if (!string.IsNullOrEmpty(ev.TxHashBlockchain))
+                                {
+                                    <TokenDisplay Token="@ev.TxHashBlockchain" Label="TxHash" Color="cyan" Truncar="true" />
+                                }
+                                <BlockchainEstado @key="ev.Id" Red="@ev.RedBlockchain" Estado="@ev.EstadoBlockchain" TxHash="@ev.TxHashBlockchain"
+                                                  Verificar="@(() => Blockchain.VerificarEvidencia(ev.TxHashBlockchain, ev.HashSHA256, ev.ProyectoId))" />
                             </div>
                         }
                         <SubirEvidencia ProyectoId="p.Id" OnSubida="async _ => await Recargar()" />

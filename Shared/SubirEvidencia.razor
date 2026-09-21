@@ -1,15 +1,32 @@
 @inject HashingService Hasher
 @inject EvidenciaService Evidencias
+@inject IBlockchainService Blockchain
 
 <div class="border rounded p-3">
     <h6 class="fw-bold mb-2">Subir evidencia</h6>
 
     @if (_resultado is not null)
     {
-        <div class="alert alert-success py-2 small mb-2">
-            <i class="bi bi-check-circle-fill me-1"></i>Evidencia grabada de forma inmutable en Polygon.
+        @if (_resultado.EstadoBlockchain == "PendienteBlockchain")
+        {
+            <div class="alert alert-warning py-2 small mb-2">
+                <i class="bi bi-hourglass-split me-1"></i>Evidencia guardada. El registro en Polygon quedó pendiente y se completa automáticamente.
+            </div>
+        }
+        else
+        {
+            <div class="alert alert-success py-2 small mb-2">
+                <i class="bi bi-check-circle-fill me-1"></i>Evidencia grabada de forma inmutable en Polygon.
+            </div>
+        }
+        @if (!string.IsNullOrEmpty(_resultado.TxHashBlockchain))
+        {
+            <TokenDisplay Token="@_resultado.TxHashBlockchain" Label="Transaction Hash (Polygon)" Color="cyan" />
+        }
+        <div class="mb-2">
+            <BlockchainEstado Red="@_resultado.RedBlockchain" Estado="@_resultado.EstadoBlockchain" TxHash="@_resultado.TxHashBlockchain"
+                              Verificar="@(() => Blockchain.VerificarEvidencia(_resultado!.TxHashBlockchain, _resultado.HashSHA256, _resultado.ProyectoId))" />
         </div>
-        <TokenDisplay Token="@_resultado.TxHashBlockchain" Label="Transaction Hash (Polygon)" Color="cyan" />
         <button class="btn btn-sm btn-outline-secondary mt-2" @onclick="Reset">Subir otra</button>
     }
     else

@@ -94,23 +94,14 @@
                                             <p class="fst-italic text-warning-emphasis mb-2">“@d.Mensaje”</p>
                                         }
                                         <TokenDisplay Token="@d.TokenId" Label="Token ID" Color="yellow" />
-                                        <TokenDisplay Token="@d.TxHashBlockchain" Label="Transaction Hash" Color="cyan" />
+                                        @if (!string.IsNullOrEmpty(d.TxHashBlockchain))
+                                        {
+                                            <TokenDisplay Token="@d.TxHashBlockchain" Label="Transaction Hash" Color="cyan" />
+                                        }
                                         <div class="d-flex justify-content-between align-items-center mt-2">
                                             <small>@Fmt(d.Monto) · @d.FechaDonacion.ToString("dd/MM/yyyy HH:mm") @(d.Anonima ? "· anónima" : "")</small>
-                                            @if (_verif.TryGetValue(d.Id, out var est) && est != null)
-                                            {
-                                                <BlockchainBadge Verificado="est.Value" />
-                                            }
-                                            else
-                                            {
-                                                <button class="btn btn-sm btn-outline-light" disabled="@_verifLoading.Contains(d.Id)" @onclick="() => VerificarDonacion(d)">
-                                                    @if (_verifLoading.Contains(d.Id))
-                                                    {
-                                                        <span class="spinner-border spinner-border-sm"></span>
-                                                    }
-                                                    else { <text>Verificar</text> }
-                                                </button>
-                                            }
+                                            <BlockchainEstado @key="d.Id" Red="@d.RedBlockchain" Estado="@d.Estado" TxHash="@d.TxHashBlockchain" Oscuro="true"
+                                                              Verificar="@(() => Blockchain.VerificarDonacion(d.TxHashBlockchain, d.TokenId, d.Monto, d.ProyectoId))" />
                                         </div>
                                     </div>
                                 }
@@ -212,20 +203,8 @@
                                                 <small><i class="bi bi-file-earmark-text me-1"></i>@ev.NombreArchivo
                                                     <span class="badge bg-secondary-subtle text-secondary-emphasis">@ev.TipoEvidencia</span>
                                                     · @ev.SubidoEn.ToString("dd/MM/yyyy")</small>
-                                                @if (_verifEv.TryGetValue(ev.Id, out var e2) && e2 != null)
-                                                {
-                                                    <BlockchainBadge Verificado="e2.Value" />
-                                                }
-                                                else
-                                                {
-                                                    <button class="btn btn-sm btn-outline-success" disabled="@_verifEvLoading.Contains(ev.Id)" @onclick="() => VerificarEvidencia(ev)">
-                                                        @if (_verifEvLoading.Contains(ev.Id))
-                                                        {
-                                                            <span class="spinner-border spinner-border-sm"></span>
-                                                        }
-                                                        else { <text>Verificar integridad</text> }
-                                                    </button>
-                                                }
+                                                <BlockchainEstado @key="ev.Id" Red="@ev.RedBlockchain" Estado="@ev.EstadoBlockchain" TxHash="@ev.TxHashBlockchain"
+                                                                  Verificar="@(() => Blockchain.VerificarEvidencia(ev.TxHashBlockchain, ev.HashSHA256, ev.ProyectoId))" />
                                             </div>
                                             <TokenDisplay Token="@ev.HashSHA256" Color="green" Truncar="true" />
                                         </div>
@@ -251,10 +230,6 @@
     private List<Donacion>? _donaciones;
     private int _usuarioId;
     private readonly Dictionary<int, string> _tab = new();
-    private readonly Dictionary<int, bool?> _verif = new();
-    private readonly HashSet<int> _verifLoading = new();
-    private readonly Dictionary<int, bool?> _verifEv = new();
-    private readonly HashSet<int> _verifEvLoading = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -265,26 +240,6 @@
 
     private string TabActivo(int id) => _tab.TryGetValue(id, out var t) ? t : "movimientos";
     private void SetTab(int id, string tab) => _tab[id] = tab;
-
-    private async Task VerificarDonacion(Donacion d)
-    {
-        _verifLoading.Add(d.Id);
-        StateHasChanged();
-        var r = await Blockchain.VerificarTransaccion(d.TxHashBlockchain);
-        _verifLoading.Remove(d.Id);
-        _verif[d.Id] = r.Valido;
-        StateHasChanged();
-    }
-
-    private async Task VerificarEvidencia(Evidencia ev)
-    {
-        _verifEvLoading.Add(ev.Id);
-        StateHasChanged();
-        var r = await Blockchain.VerificarTransaccion(ev.TxHashBlockchain);
-        _verifEvLoading.Remove(ev.Id);
-        _verifEv[ev.Id] = r.Valido;
-        StateHasChanged();
-    }
 
     private static string Fmt(decimal v) => "$" + v.ToString("N0", Ar);
 

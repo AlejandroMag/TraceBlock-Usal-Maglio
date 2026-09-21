@@ -87,6 +87,12 @@ namespace TrazeaBlock.Data.Migrations
                     b.Property<int>("ProyectoId")
                         .HasColumnType("integer");
 
+                    b.Property<string>("RedBlockchain")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("mock");
+
                     b.Property<string>("TokenId")
                         .IsRequired()
                         .HasColumnType("text");
@@ -161,6 +167,12 @@ namespace TrazeaBlock.Data.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("EstadoBlockchain")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("RegistradoBlockchain");
+
                     b.Property<string>("HashSHA256")
                         .IsRequired()
                         .HasColumnType("text");
@@ -171,6 +183,12 @@ namespace TrazeaBlock.Data.Migrations
 
                     b.Property<int>("ProyectoId")
                         .HasColumnType("integer");
+
+                    b.Property<string>("RedBlockchain")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("mock");
 
                     b.Property<DateTime>("SubidoEn")
                         .HasColumnType("timestamp with time zone");

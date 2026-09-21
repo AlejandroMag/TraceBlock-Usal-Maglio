@@ -1,0 +1,123 @@
+@inject BlockchainOptions Opciones
+
+@*
+  Estado de un registro en la cadena y botón de verificación.
+  - Red == "mock": registro simulado (seed o modo demo). Con la blockchain real activa no se
+    consulta la red, porque ese hash no existe ahí.
+  - Estado == "PendienteBlockchain": todavía no confirmado; el servicio de fondo lo reintenta.
+  - Registrado en una red real: link a Polygonscan + verificación de existencia e integridad.
+*@
+<span class="d-inline-flex align-items-center flex-wrap gap-2">
+    @if (EsMock)
+    {
+        <span class="badge bg-secondary" title="Generado por el servicio simulado: no existe en la red">
+            <i class="bi bi-cpu me-1"></i>Simulado (demo)
+        </span>
+    }
+    else if (Pendiente)
+    {
+        <span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split me-1"></i>Pendiente de registro en Polygon</span>
+        @if (TieneHash)
+        {
+            <a class="@LinkClass" href="@Opciones.UrlTx(TxHash)" target="_blank" rel="noopener">
+                enviada, esperando confirmación <i class="bi bi-box-arrow-up-right"></i>
+            </a>
+        }
+    }
+    else if (TieneHash)
+    {
+        <a class="@LinkClass" href="@Opciones.UrlTx(TxHash)" target="_blank" rel="noopener">
+            <i class="bi bi-box-arrow-up-right me-1"></i>Ver en Polygonscan
+        </a>
+    }
+
+    @if (MostrarVerificar)
+    {
+        @if (_resultado is null)
+        {
+            <button type="button" class="btn btn-sm @BotonClass" disabled="@_cargando" @onclick="Ejecutar">
+                @if (_cargando)
+                {
+                    <span class="spinner-border spinner-border-sm me-1"></span><text>Verificando…</text>
+                }
+                else
+                {
+                    <i class="bi bi-diagram-3 me-1"></i><text>Verificar</text>
+                }
+            </button>
+        }
+        else if (_resultado.Valido)
+        {
+            <BlockchainBadge Verificado="true" />
+            <small class="@TextoClass">@_resultado.Confirmaciones conf.</small>
+            @if (_resultado.IntegridadOk)
+            {
+                <span class="badge bg-success-subtle text-success-emphasis" title="@_resultado.Detalle">
+                    <i class="bi bi-shield-check me-1"></i>Integridad OK
+                </span>
+            }
+            else
+            {
+                <span class="badge bg-danger" title="@_resultado.Detalle">
+                    <i class="bi bi-shield-exclamation me-1"></i>Integridad: no coincide
+                </span>
+            }
+        }
+        else
+        {
+            <BlockchainBadge Verificado="false" />
+            <small class="@TextoClass">@_resultado.Error</small>
+            <button type="button" class="btn btn-sm btn-link p-0 @LinkClass" @onclick="Reintentar">reintentar</button>
+        }
+    }
+</span>
+
+@code {
+    /// <summary>Red en la que se registró el hash ("mock", "amoy", …).</summary>
+    [Parameter, EditorRequired] public string Red { get; set; } = "mock";
+
+    /// <summary>"RegistradoBlockchain" o "PendienteBlockchain".</summary>
+    [Parameter] public string Estado { get; set; } = "RegistradoBlockchain";
+
+    [Parameter] public string TxHash { get; set; } = "";
+
+    /// <summary>Consulta a la cadena; la provee la página según sea donación o evidencia.</summary>
+    [Parameter] public Func<Task<BlockchainVerification>>? Verificar { get; set; }
+
+    /// <summary>true cuando se renderiza sobre fondo oscuro (.blockchain-card).</summary>
+    [Parameter] public bool Oscuro { get; set; }
+
+    private BlockchainVerification? _resultado;
+    private bool _cargando;
+
+    private bool EsMock => string.Equals(Red, "mock", StringComparison.OrdinalIgnoreCase);
+    private bool Pendiente => Estado == "PendienteBlockchain";
+    private bool TieneHash => !string.IsNullOrWhiteSpace(TxHash);
+
+    // Un hash simulado no se consulta contra la red real: no existe ahí.
+    private bool MostrarVerificar => Verificar is not null && !Pendiente && !(EsMock && Opciones.UsarBlockchainReal);
+
+    private string LinkClass => Oscuro ? "link-info small" : "link-primary small";
+    private string BotonClass => Oscuro ? "btn-outline-light" : "btn-outline-primary";
+    private string TextoClass => Oscuro ? "text-light opacity-75" : "text-muted";
+
+    private async Task Ejecutar()
+    {
+        if (Verificar is null) return;
+        _cargando = true;
+        try
+        {
+            _resultado = await Verificar();
+        }
+        catch (Exception ex)
+        {
+            _resultado = new BlockchainVerification(false, 0, ex.Message);
+        }
+        finally
+        {
+            _cargando = false;
+        }
+    }
+
+    private void Reintentar() => _resultado = null;
+}

@@ -3,6 +3,7 @@
 @inject AuthService Auth
 @inject ProyectoService ProyectoSvc
 @inject NavigationManager Nav
+@inject IBlockchainService Blockchain
 
 <PageTitle>Evidencias — TraceBlock</PageTitle>
 
@@ -48,7 +49,12 @@
                                 <span class="text-muted">· @ev.SubidoEn.ToString("dd/MM/yyyy")</span></div>
                             <p class="small text-muted mb-1">@ev.Descripcion</p>
                             <TokenDisplay Token="@ev.HashSHA256" Label="SHA-256" Color="green" Truncar="true" />
-                            <TokenDisplay Token="@ev.TxHashBlockchain" Label="TxHash (Polygon)" Color="cyan" Truncar="true" />
+                            @if (!string.IsNullOrEmpty(ev.TxHashBlockchain))
+                            {
+                                <TokenDisplay Token="@ev.TxHashBlockchain" Label="TxHash (Polygon)" Color="cyan" Truncar="true" />
+                            }
+                            <BlockchainEstado @key="ev.Id" Red="@ev.RedBlockchain" Estado="@ev.EstadoBlockchain" TxHash="@ev.TxHashBlockchain"
+                                              Verificar="@(() => Blockchain.VerificarEvidencia(ev.TxHashBlockchain, ev.HashSHA256, ev.ProyectoId))" />
                         </div>
                     }
                 }

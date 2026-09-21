@@ -6,6 +6,7 @@ using TrazeaBlock.Configuration;
 using TrazeaBlock.Data;
 using TrazeaBlock.Models;
 using TrazeaBlock.Services;
+using TrazeaBlock.Services.Blockchain;
 using TrazeaBlock.Services.Interfaces;
 using TrazeaBlock.Services.MercadoPago;
 using TrazeaBlock.Services.Mock;
@@ -48,18 +49,31 @@ builder.Services.AddSingleton(validacionesConfig);
 
 // 3. Servicios externos (mock por ahora; se swapean por reales cuando los flags sean true)
 builder.Services.AddScoped<IGeoService, MockGeoService>();
-builder.Services.AddScoped<IBlockchainService, MockBlockchainService>();
+
+// Blockchain: Polygon real si el flag está activo, si no el simulado. Es singleton porque el
+// servicio real serializa los envíos de la única billetera de la plataforma.
+var blockchainOptions = builder.Configuration.GetSection("Blockchain").Get<BlockchainOptions>()
+    ?? new BlockchainOptions();
+builder.Services.AddSingleton(blockchainOptions);
+if (blockchainOptions.UsarBlockchainReal)
+{
+    builder.Services.AddSingleton<IBlockchainService, PolygonBlockchainService>();
+    builder.Services.AddHostedService<AnclajePendienteService>(); // retoma registros que quedaron pendientes
+}
+else
+{
+    builder.Services.AddSingleton<IBlockchainService, MockBlockchainService>();
+}
 
 // MercadoPago: credenciales tipadas (Access Token via user-secrets)
 var mpOptions = builder.Configuration.GetSection("MercadoPago").Get<MercadoPagoOptions>()
     ?? new MercadoPagoOptions();
 builder.Services.AddSingleton(mpOptions);
 
-// Pago: real (MercadoPago) si el flag está activo, si no el mock.
-if (validacionesConfig.ValidarPagoMercadoPago)
-    builder.Services.AddScoped<IPagoService, MercadoPagoPagoService>();
-else
-    builder.Services.AddScoped<IPagoService, MockPagoService>();
+// Cobro de respaldo, solo para ValidarPagoMercadoPago = false (correr sin credenciales).
+// Con el flag en true el cobro va por Checkout Pro (MercadoPagoConexionService) y lo procesa
+// MercadoPago, con credenciales de prueba pero contra su infraestructura real.
+builder.Services.AddScoped<IPagoService, MockPagoService>();
 
 // Marketplace / OAuth de MercadoPago (conexión por ONG)
 builder.Services.AddHttpClient<MercadoPagoConexionService>();
@@ -99,6 +113,11 @@ using (var scope = app.Services.CreateScope())
     db.Database.Migrate();
     DbSeeder.Seed(db);
 }
+
+// Si la blockchain real está activa, se construye ahora para que una configuración
+// incompleta (clave privada, contrato) falle al arrancar y no en la primera donación.
+if (blockchainOptions.UsarBlockchainReal)
+    _ = app.Services.GetRequiredService<IBlockchainService>();
 
 // 9. Middleware
 app.UseStaticFiles();

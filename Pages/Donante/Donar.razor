@@ -3,6 +3,7 @@
 @inject ProyectoService ProyectoSvc
 @inject DonacionService Donaciones
 @inject NavigationManager Nav
+@inject IBlockchainService Blockchain
 @inject ValidacionesConfig Config
 @inject TrazeaBlock.Services.MercadoPago.MercadoPagoConexionService Conexion
 
@@ -103,11 +104,26 @@ else
                     {
                         <div class="text-center mb-3">
                             <i class="bi bi-check-circle-fill text-success fade-check" style="font-size:4rem;"></i>
-                            <h2 class="fw-bold mt-2">¡Donación registrada en blockchain!</h2>
+                            @if (_resultado.Estado == "PendienteBlockchain")
+                            {
+                                <h2 class="fw-bold mt-2">¡Donación confirmada!</h2>
+                                <p class="text-muted mb-0">El registro en Polygon se está completando; en unos minutos vas a poder verificarlo.</p>
+                            }
+                            else
+                            {
+                                <h2 class="fw-bold mt-2">¡Donación registrada en blockchain!</h2>
+                            }
                         </div>
                         <div class="blockchain-card text-white mb-3">
                             <TokenDisplay Token="@_resultado.TokenId" Label="Tu Token ID" Color="yellow" />
-                            <TokenDisplay Token="@_resultado.TxHashBlockchain" Label="Transaction Hash (Polygon)" Color="cyan" />
+                            @if (!string.IsNullOrEmpty(_resultado.TxHashBlockchain))
+                            {
+                                <TokenDisplay Token="@_resultado.TxHashBlockchain" Label="Transaction Hash (Polygon)" Color="cyan" />
+                            }
+                            <div class="mb-2">
+                                <BlockchainEstado Red="@_resultado.RedBlockchain" Estado="@_resultado.Estado" TxHash="@_resultado.TxHashBlockchain" Oscuro="true"
+                                                  Verificar="@(() => Blockchain.VerificarDonacion(_resultado!.TxHashBlockchain, _resultado.TokenId, _resultado.Monto, _resultado.ProyectoId))" />
+                            </div>
                             @if (!string.IsNullOrEmpty(_resultado.PaymentId))
                             {
                                 <TokenDisplay Token="@_resultado.PaymentId" Label="Payment ID (MercadoPago)" Color="green" />
@@ -190,7 +206,7 @@ else
         Nav.NavigateTo(initPoint, forceLoad: true);
     }
 
-    // -------- Flujo simulado (mock) --------
+    // -------- Alta sin pasarela (ValidarPagoMercadoPago = false) --------
     private async Task Confirmar()
     {
         if (_monto < 100) { _error = "El monto mínimo es $100."; _fase = Fase.Error; return; }

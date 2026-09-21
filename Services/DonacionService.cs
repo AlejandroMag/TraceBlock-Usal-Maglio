@@ -13,16 +13,16 @@ public class DonacionService
     private readonly IBlockchainService _blockchain;
     private readonly IPagoService _pago;
     private readonly MercadoPagoConexionService _conexion;
-    private readonly ValidacionesConfig _config;
+    private readonly ILogger<DonacionService> _log;
 
     public DonacionService(AppDbContext db, IBlockchainService blockchain, IPagoService pago,
-        MercadoPagoConexionService conexion, ValidacionesConfig config)
+        MercadoPagoConexionService conexion, ILogger<DonacionService> log)
     {
         _db = db;
         _blockchain = blockchain;
         _pago = pago;
         _conexion = conexion;
-        _config = config;
+        _log = log;
     }
 
     public async Task<List<Donacion>> ObtenerDonacionesUsuarioAsync(int usuarioId)
@@ -95,7 +95,6 @@ public class DonacionService
         var (approved, _, _) = await _conexion.VerificarPagoAsync(proyecto.OrganizacionId, paymentId);
         if (!approved) return (null, "El pago no fue aprobado.");
 
-        var txHash = await _blockchain.RegistrarDonacion(tokenId, pend.Monto, pend.ProyectoId);
         var donacion = new Donacion
         {
             ProyectoId = pend.ProyectoId,
@@ -105,13 +104,17 @@ public class DonacionService
             Mensaje = pend.Mensaje,
             Anonima = pend.Anonima,
             FechaDonacion = DateTime.UtcNow,
-            TxHashBlockchain = txHash,
-            Estado = "RegistradoBlockchain",
+            Estado = "PendienteBlockchain",
             PaymentId = paymentId
         };
         _db.Donaciones.Add(donacion);
         proyecto.MontoRecaudado += pend.Monto;
         _db.DonacionesPendientes.Remove(pend);
+
+        // El pago ya se hizo: la donación se persiste antes de tocar la cadena.
+        await _db.SaveChangesAsync();
+
+        await AnclarAsync(donacion);
         await _db.SaveChangesAsync();
         return (donacion, null);
     }
@@ -129,10 +132,10 @@ public class DonacionService
             .FirstOrDefaultAsync(d => d.TokenId == normalizado);
     }
 
+    // --- Alta sin pasarela: solo cuando ValidarPagoMercadoPago está en false. El flujo
+    //     que se usa en producción y en las pruebas es IniciarDonacionCheckoutProAsync. ---
     public async Task<(Donacion? donacion, string? error)> CrearDonacionAsync(
-        int usuarioId, int proyectoId, decimal monto,
-        string? mensaje, bool anonima,
-        string? cardToken = null, string? paymentMethodId = null, int installments = 1)
+        int usuarioId, int proyectoId, decimal monto, string? mensaje, bool anonima)
     {
         if (monto < 100)
             return (null, "El monto mínimo de donación es $100.");
@@ -149,22 +152,9 @@ public class DonacionService
 
         var tokenId = Guid.NewGuid().ToString("N").ToUpper();
 
-        // Marketplace: en modo real, el cobro va a la cuenta de la ONG. Si no está conectada, se bloquea.
-        string? accessTokenOng = null;
-        if (_config.ValidarPagoMercadoPago)
-        {
-            var (token, _) = await _conexion.ObtenerCredencialesValidasAsync(proyecto.OrganizacionId);
-            if (string.IsNullOrWhiteSpace(token))
-                return (null, "La organización todavía no configuró sus cobros con MercadoPago.");
-            accessTokenOng = token;
-        }
-
-        var pago = await _pago.ProcesarPago(
-            new PagoRequest(monto, usuario.Email, tokenId, cardToken, paymentMethodId, installments, accessTokenOng));
+        var pago = await _pago.ProcesarPago(new PagoRequest(monto, usuario.Email, tokenId));
         if (!pago.Exitoso)
             return (null, pago.Error ?? "No se pudo procesar el pago.");
-
-        var txHash = await _blockchain.RegistrarDonacion(tokenId, monto, proyectoId);
 
         var donacion = new Donacion
         {
@@ -175,15 +165,39 @@ public class DonacionService
             Mensaje = mensaje,
             Anonima = anonima,
             FechaDonacion = DateTime.UtcNow,
-            TxHashBlockchain = txHash,
-            Estado = "RegistradoBlockchain",
+            Estado = "PendienteBlockchain",
             PaymentId = pago.PaymentId
         };
         _db.Donaciones.Add(donacion);
-
         proyecto.MontoRecaudado += monto;
+        await _db.SaveChangesAsync();
 
+        await AnclarAsync(donacion);
         await _db.SaveChangesAsync();
         return (donacion, null);
+    }
+
+    // Guarda primero, ancla después: si la cadena falla o tarda, la donación queda
+    // "PendienteBlockchain" y AnclajePendienteService la retoma. Nunca se pierde el pago.
+    private async Task AnclarAsync(Donacion donacion)
+    {
+        donacion.RedBlockchain = _blockchain.Red;
+        try
+        {
+            donacion.TxHashBlockchain = await _blockchain.RegistrarDonacion(donacion.TokenId, donacion.Monto, donacion.ProyectoId);
+            donacion.Estado = "RegistradoBlockchain";
+        }
+        catch (BlockchainPendienteException ex)
+        {
+            donacion.TxHashBlockchain = ex.TxHash;   // enviada; se confirma después
+            donacion.Estado = "PendienteBlockchain";
+            _log.LogWarning("Donación {Token} enviada a {Red} pero sin confirmar aún ({Hash})", donacion.TokenId, _blockchain.Red, ex.TxHash);
+        }
+        catch (Exception ex)
+        {
+            donacion.TxHashBlockchain = "";
+            donacion.Estado = "PendienteBlockchain";
+            _log.LogError(ex, "No se pudo anclar la donación {Token} en {Red}; queda pendiente", donacion.TokenId, _blockchain.Red);
+        }
     }
 }

@@ -95,6 +95,12 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<DonacionPendiente>().Property(d => d.Monto).HasPrecision(18, 2);
         modelBuilder.Entity<DonacionPendiente>().HasIndex(d => d.TokenId).IsUnique();
 
+        // Defaults en la base para que los registros anteriores a la blockchain real
+        // queden marcados como simulados (y no con string vacío) al migrar.
+        modelBuilder.Entity<Donacion>().Property(d => d.RedBlockchain).HasDefaultValue("mock");
+        modelBuilder.Entity<Evidencia>().Property(e => e.RedBlockchain).HasDefaultValue("mock");
+        modelBuilder.Entity<Evidencia>().Property(e => e.EstadoBlockchain).HasDefaultValue("RegistradoBlockchain");
+
         // Padrón oficial de ONGs: búsqueda por CUIT, una fila por CUIT
         modelBuilder.Entity<PadronOng>().Property(p => p.Cuit).HasMaxLength(11);
         modelBuilder.Entity<PadronOng>().HasIndex(p => p.Cuit).IsUnique();

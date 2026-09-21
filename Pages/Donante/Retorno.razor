@@ -1,6 +1,7 @@
 @page "/donar/retorno"
 @inject DonacionService Donaciones
 @inject NavigationManager Nav
+@inject IBlockchainService Blockchain
 
 <PageTitle>Confirmando donación — TraceBlock</PageTitle>
 
@@ -19,11 +20,26 @@
                 <div class="card"><div class="card-body">
                     <div class="text-center mb-3">
                         <i class="bi bi-check-circle-fill text-success fade-check" style="font-size:4rem;"></i>
-                        <h2 class="fw-bold mt-2">¡Donación registrada en blockchain!</h2>
+                        @if (_donacion.Estado == "PendienteBlockchain")
+                        {
+                            <h2 class="fw-bold mt-2">¡Donación confirmada!</h2>
+                            <p class="text-muted mb-0">El registro en Polygon se está completando; en unos minutos vas a poder verificarlo.</p>
+                        }
+                        else
+                        {
+                            <h2 class="fw-bold mt-2">¡Donación registrada en blockchain!</h2>
+                        }
                     </div>
                     <div class="blockchain-card text-white mb-3">
                         <TokenDisplay Token="@_donacion.TokenId" Label="Tu Token ID" Color="yellow" />
-                        <TokenDisplay Token="@_donacion.TxHashBlockchain" Label="Transaction Hash (Polygon)" Color="cyan" />
+                        @if (!string.IsNullOrEmpty(_donacion.TxHashBlockchain))
+                        {
+                            <TokenDisplay Token="@_donacion.TxHashBlockchain" Label="Transaction Hash (Polygon)" Color="cyan" />
+                        }
+                        <div class="mb-2">
+                            <BlockchainEstado Red="@_donacion.RedBlockchain" Estado="@_donacion.Estado" TxHash="@_donacion.TxHashBlockchain" Oscuro="true"
+                                              Verificar="@(() => Blockchain.VerificarDonacion(_donacion!.TxHashBlockchain, _donacion.TokenId, _donacion.Monto, _donacion.ProyectoId))" />
+                        </div>
                         @if (!string.IsNullOrEmpty(_donacion.PaymentId))
                         {
                             <TokenDisplay Token="@_donacion.PaymentId" Label="Payment ID (MercadoPago)" Color="green" />
