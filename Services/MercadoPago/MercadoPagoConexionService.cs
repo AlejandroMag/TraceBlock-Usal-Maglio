@@ -19,12 +19,15 @@ public class MercadoPagoConexionService
     private readonly AppDbContext _db;
     private readonly MercadoPagoOptions _opt;
     private readonly HttpClient _http;
+    private readonly ILogger<MercadoPagoConexionService> _log;
 
-    public MercadoPagoConexionService(AppDbContext db, MercadoPagoOptions opt, HttpClient http)
+    public MercadoPagoConexionService(AppDbContext db, MercadoPagoOptions opt, HttpClient http,
+        ILogger<MercadoPagoConexionService> log)
     {
         _db = db;
         _opt = opt;
         _http = http;
+        _log = log;
     }
 
     public bool ConfigDisponible =>
@@ -44,7 +47,11 @@ public class MercadoPagoConexionService
     public async Task<bool> EstaConectadaAsync(int orgId) =>
         await _db.OrgMercadoPagos.AnyAsync(m => m.OrganizacionId == orgId);
 
-    public async Task<(bool ok, string? error)> ConectarAsync(int orgId, string code)
+    // La cuenta de MercadoPago de una ONG queda fija desde la primera conexión. Volver a pasar
+    // por el OAuth solo sirve para renovar los tokens de esa misma cuenta: así, quien obtenga
+    // la contraseña de una ONG no puede desviar sus donaciones a otra cuenta. Cambiarla es una
+    // acción del administrador, directo en la base (ver README).
+    public async Task<ResultadoConexionMp> ConectarAsync(int orgId, string code)
     {
         var body = new
         {
@@ -56,23 +63,48 @@ public class MercadoPagoConexionService
         };
 
         var (tokens, error) = await PedirTokenAsync(body);
-        if (tokens is null) return (false, error);
+        if (tokens is null || tokens.UserId == 0 || string.IsNullOrEmpty(tokens.AccessToken))
+        {
+            _log.LogWarning("OAuth de MercadoPago fallido para la ONG {Org}: {Error}", orgId, error ?? "respuesta sin user_id");
+            return ResultadoConexionMp.Error;
+        }
+        var cuenta = tokens.UserId.ToString();
 
         var conexion = await _db.OrgMercadoPagos.FirstOrDefaultAsync(m => m.OrganizacionId == orgId);
-        if (conexion is null)
+        if (conexion is not null && conexion.MpUserId != cuenta)
         {
-            conexion = new OrgMercadoPago { OrganizacionId = orgId };
+            _log.LogWarning("La ONG {Org} intentó cambiar su cuenta de MercadoPago {Actual} por {Nueva}: rechazado",
+                orgId, conexion.MpUserId, cuenta);
+            return ResultadoConexionMp.CuentaDistinta;
+        }
+        if (await _db.OrgMercadoPagos.AnyAsync(m => m.MpUserId == cuenta && m.OrganizacionId != orgId))
+        {
+            _log.LogWarning("La ONG {Org} intentó conectar la cuenta {Cuenta}, que ya cobra para otra organización", orgId, cuenta);
+            return ResultadoConexionMp.CuentaEnUso;
+        }
+
+        var nueva = conexion is null;
+        if (nueva)
+        {
+            conexion = new OrgMercadoPago { OrganizacionId = orgId, MpUserId = cuenta, FechaConexion = DateTime.UtcNow };
             _db.OrgMercadoPagos.Add(conexion);
         }
-        conexion.MpUserId = tokens.UserId.ToString();
-        conexion.AccessToken = tokens.AccessToken ?? "";
+        conexion!.AccessToken = tokens.AccessToken ?? "";
         conexion.RefreshToken = tokens.RefreshToken ?? "";
         conexion.PublicKey = tokens.PublicKey ?? "";
         conexion.ExpiraEn = DateTime.UtcNow.AddSeconds(tokens.ExpiresIn > 0 ? tokens.ExpiresIn : 21600);
-        conexion.FechaConexion = DateTime.UtcNow;
 
-        await _db.SaveChangesAsync();
-        return (true, null);
+        try
+        {
+            await _db.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex)
+        {
+            // El índice único de MpUserId frena a dos ONGs conectando la misma cuenta a la vez.
+            _log.LogWarning(ex, "La cuenta {Cuenta} no se pudo asociar a la ONG {Org}", cuenta, orgId);
+            return ResultadoConexionMp.CuentaEnUso;
+        }
+        return nueva ? ResultadoConexionMp.Conectada : ResultadoConexionMp.Renovada;
     }
 
     // Devuelve un access token válido para la ONG, refrescándolo si venció.
@@ -139,25 +171,38 @@ public class MercadoPagoConexionService
     }
 
     // Verifica el estado de un pago consultando con el token de la ONG.
-    public async Task<(bool approved, decimal monto, string? error)> VerificarPagoAsync(int orgId, string paymentId)
+    // Consulta el pago a MercadoPago con el token de la ONG. Devuelve los datos crudos:
+    // decidir si el pago corresponde a una donación es responsabilidad de quien llama.
+    public async Task<(PagoMercadoPago? pago, string? error)> ObtenerPagoAsync(int orgId, string paymentId)
     {
         var (accessToken, _) = await ObtenerCredencialesValidasAsync(orgId);
-        if (string.IsNullOrWhiteSpace(accessToken)) return (false, 0, "Sin conexión.");
+        if (string.IsNullOrWhiteSpace(accessToken)) return (null, "Sin conexión.");
         try
         {
-            using var req = new HttpRequestMessage(HttpMethod.Get, $"https://api.mercadopago.com/v1/payments/{paymentId}");
+            using var req = new HttpRequestMessage(HttpMethod.Get,
+                $"https://api.mercadopago.com/v1/payments/{Uri.EscapeDataString(paymentId)}");
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
             var resp = await _http.SendAsync(req);
             var texto = await resp.Content.ReadAsStringAsync();
-            if (!resp.IsSuccessStatusCode) return (false, 0, texto);
+            if (!resp.IsSuccessStatusCode) return (null, $"MP pago {(int)resp.StatusCode}: {texto}");
+
             using var doc = JsonDocument.Parse(texto);
-            var status = doc.RootElement.GetProperty("status").GetString();
-            var monto = doc.RootElement.GetProperty("transaction_amount").GetDecimal();
-            return (status == "approved", monto, null);
+            var r = doc.RootElement;
+            string? Texto(string prop) => r.TryGetProperty(prop, out var v) && v.ValueKind != JsonValueKind.Null
+                ? (v.ValueKind == JsonValueKind.String ? v.GetString() : v.GetRawText())
+                : null;
+
+            return (new PagoMercadoPago(
+                Id: Texto("id") ?? paymentId,
+                Status: Texto("status") ?? "",
+                Monto: r.GetProperty("transaction_amount").GetDecimal(),
+                Moneda: Texto("currency_id"),
+                ExternalReference: Texto("external_reference"),
+                CollectorId: Texto("collector_id")), null);
         }
         catch (Exception ex)
         {
-            return (false, 0, ex.Message);
+            return (null, ex.Message);
         }
     }
 
@@ -190,3 +235,16 @@ public class MercadoPagoConexionService
         [JsonPropertyName("expires_in")] public int ExpiresIn { get; set; }
     }
 }
+
+public enum ResultadoConexionMp
+{
+    Conectada,       // primera conexión: la cuenta queda asociada a la ONG
+    Renovada,        // misma cuenta de siempre, tokens nuevos
+    CuentaDistinta,  // la ONG ya tiene otra cuenta: solo la cambia el administrador
+    CuentaEnUso,     // esa cuenta ya cobra para otra ONG
+    Error
+}
+
+// Lo que MercadoPago dice de un pago. CollectorId es la cuenta que cobró.
+public record PagoMercadoPago(
+    string Id, string Status, decimal Monto, string? Moneda, string? ExternalReference, string? CollectorId);

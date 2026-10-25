@@ -1,0 +1,23 @@
+# Lo que no tiene que entrar a la imagen: compilados locales, configuración y secretos
+# de desarrollo, y archivos de trabajo.
+bin/
+obj/
+.git/
+.vs/
+.vscode/
+.config/
+.claude/
+*.user
+*.log
+*.err
+*.db
+*.csv
+
+# La configuración de desarrollo apunta a la base local y puede tener contraseñas.
+appsettings.Development.json
+
+# Para correr la imagen no hacen falta.
+Dockerfile
+.dockerignore
+docker-compose.yml
+Contracts/

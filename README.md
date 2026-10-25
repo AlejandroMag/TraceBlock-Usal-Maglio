@@ -108,6 +108,65 @@ Las migraciones se aplican solas al arrancar.
 
 > Para probar el flujo real de Mercado Pago hace falta exponer la app por HTTPS público (por ejemplo con Dev Tunnels), porque MP no acepta `localhost` como URL de redirect. La URL del túnel debe coincidir **exactamente** con `MercadoPago:RedirectUri` y con la configurada en el panel de Mercado Pago.
 
+## Despliegue (Render + Neon)
+
+La app se publica como contenedor con el `Dockerfile` del repositorio. Render no tiene servidores en Sudamérica: conviene la región **Virginia** en Render y **`aws-us-east-1`** en Neon, para que la app y la base queden cerca.
+
+### Base de datos en Neon
+
+Neon entrega una URL tipo `postgresql://usuario:clave@host/base?sslmode=require`, pero Npgsql necesita el formato de pares clave=valor:
+
+```
+Host=ep-xxxx.us-east-1.aws.neon.tech;Database=neondb;Username=neondb_owner;Password=...;SSL Mode=Require
+```
+
+Usar el host **directo**, no el que termina en `-pooler`. Las migraciones se aplican solas al arrancar la app.
+
+El padrón se importa una sola vez, desde la máquina local, apuntando a Neon:
+
+```powershell
+$env:ConnectionStrings__DefaultConnection = "Host=ep-xxxx...;SSL Mode=Require"
+dotnet run -- importar-padron "C:\ruta\regNac_ONG.csv"
+```
+
+### Servicio web en Render
+
+Crear un **Web Service** desde el repositorio de GitHub, con runtime **Docker**. Variables de entorno:
+
+| Variable | Valor |
+|---|---|
+| `ConnectionStrings__DefaultConnection` | La conexión a Neon, en el formato de arriba |
+| `MercadoPago__ClientSecret` | El de la aplicación del Integrador |
+| `MercadoPago__RedirectUri` | `https://<servicio>.onrender.com/mp/cb` (y la misma en el panel de MercadoPago) |
+| `Blockchain__PrivateKey` | La clave de la billetera de la plataforma, **solo de testnet** |
+
+`PORT` lo define Render y la app lo toma sola. El resto de la configuración pública está en `appsettings.json`.
+
+> En el plan gratuito, Render duerme el servicio tras 15 minutos sin tráfico y tarda alrededor de un minuto en despertar. Mientras duerme, tampoco corre el reintento de anclajes pendientes en Polygon.
+
+## Operación
+
+### Cambiar la cuenta de MercadoPago de una ONG
+
+Por seguridad, la cuenta de MercadoPago que conecta una ONG queda fija: desde el panel solo se puede renovar la conexión con **esa misma cuenta**. Así, quien obtenga la contraseña de una ONG no puede desviar sus donaciones a otra cuenta. Además, una cuenta de MercadoPago no puede cobrar para dos ONGs a la vez.
+
+Si una ONG necesita cambiarla, lo hace el administrador directo en la base:
+
+```sql
+-- 1. Identificar la ONG y ver qué cuenta tiene hoy
+SELECT o."Id", o."NombreOrganizacion", o."CUIT", m."MpUserId", m."FechaConexion"
+FROM "Organizaciones" o
+LEFT JOIN "OrgMercadoPagos" m ON m."OrganizacionId" = o."Id"
+WHERE o."NombreOrganizacion" ILIKE '%nombre%';
+
+-- 2. Desasociar la cuenta actual (reemplazar 123 por el Id de la ONG)
+DELETE FROM "OrgMercadoPagos" WHERE "OrganizacionId" = 123;
+```
+
+Después, la ONG entra a su panel y conecta la cuenta nueva con el botón de siempre.
+
+> Conviene hacerlo cuando la ONG no tenga donaciones en curso: un pago iniciado con la cuenta vieja no se podrá confirmar después del cambio, porque el sistema verifica que lo haya cobrado la cuenta asociada.
+
 ## Autor
 
 Alejandro Maglio — Ingeniería en Informática, Universidad del Salvador.

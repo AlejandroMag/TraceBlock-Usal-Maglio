@@ -1,10 +1,11 @@
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using TrazeaBlock.Models;
 
 namespace TrazeaBlock.Data;
 
-public class AppDbContext : DbContext
+public class AppDbContext : DbContext, IDataProtectionKeyContext
 {
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
@@ -18,6 +19,11 @@ public class AppDbContext : DbContext
     public DbSet<OrgMercadoPago> OrgMercadoPagos => Set<OrgMercadoPago>();
     public DbSet<DonacionPendiente> DonacionesPendientes => Set<DonacionPendiente>();
     public DbSet<PadronOng> PadronOngs => Set<PadronOng>();
+
+    // Claves con las que ASP.NET cifra las cookies de sesión. Van en la base porque el
+    // hosting no tiene disco persistente: si se perdieran en cada reinicio, todos los
+    // usuarios quedarían deslogueados.
+    public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -35,6 +41,8 @@ public class AppDbContext : DbContext
         // Índices únicos
         modelBuilder.Entity<Usuario>().HasIndex(u => u.Email).IsUnique();
         modelBuilder.Entity<Donacion>().HasIndex(d => d.TokenId).IsUnique();
+        // Un pago de MercadoPago confirma una sola donación. Las del seed no tienen pago.
+        modelBuilder.Entity<Donacion>().HasIndex(d => d.PaymentId).IsUnique().HasFilter("\"PaymentId\" <> ''");
 
         // Relación 1-1 Usuario <-> Organizacion
         modelBuilder.Entity<Organizacion>()
@@ -91,6 +99,9 @@ public class AppDbContext : DbContext
             .OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<OrgMercadoPago>()
             .HasIndex(m => m.OrganizacionId).IsUnique();
+        // Una cuenta de MercadoPago cobra para una sola ONG.
+        modelBuilder.Entity<OrgMercadoPago>()
+            .HasIndex(m => m.MpUserId).IsUnique();
 
         modelBuilder.Entity<DonacionPendiente>().Property(d => d.Monto).HasPrecision(18, 2);
         modelBuilder.Entity<DonacionPendiente>().HasIndex(d => d.TokenId).IsUnique();

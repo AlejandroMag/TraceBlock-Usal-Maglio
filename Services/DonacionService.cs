@@ -92,8 +92,24 @@ public class DonacionService
         if (string.IsNullOrWhiteSpace(paymentId))
             return (null, "El pago no llegó confirmado.");
 
-        var (approved, _, _) = await _conexion.VerificarPagoAsync(proyecto.OrganizacionId, paymentId);
-        if (!approved) return (null, "El pago no fue aprobado.");
+        // Los datos de la URL de retorno los puede editar cualquiera: se toman solo como
+        // pista de qué pago buscar, y todo lo que importa se le pregunta a MercadoPago.
+        var (pago, errorMp) = await _conexion.ObtenerPagoAsync(proyecto.OrganizacionId, paymentId);
+        if (pago is null)
+        {
+            _log.LogWarning("No se pudo consultar el pago {Pago} de la donación {Token}: {Error}", paymentId, tokenId, errorMp);
+            return (null, "No se pudo verificar el pago con MercadoPago.");
+        }
+
+        var cuentaOng = await _conexion.ObtenerConexionAsync(proyecto.OrganizacionId);
+        var rechazo = MotivoRechazo(pago, pend, cuentaOng?.MpUserId);
+        if (rechazo is null && await _db.Donaciones.AnyAsync(d => d.PaymentId == pago.Id))
+            rechazo = "Ese pago ya se usó para confirmar otra donación.";
+        if (rechazo is not null)
+        {
+            _log.LogWarning("Pago {Pago} rechazado para la donación {Token}: {Motivo}", pago.Id, tokenId, rechazo);
+            return (null, rechazo);
+        }
 
         var donacion = new Donacion
         {
@@ -105,18 +121,49 @@ public class DonacionService
             Anonima = pend.Anonima,
             FechaDonacion = DateTime.UtcNow,
             Estado = "PendienteBlockchain",
-            PaymentId = paymentId
+            PaymentId = pago.Id
         };
         _db.Donaciones.Add(donacion);
         proyecto.MontoRecaudado += pend.Monto;
         _db.DonacionesPendientes.Remove(pend);
 
         // El pago ya se hizo: la donación se persiste antes de tocar la cadena.
-        await _db.SaveChangesAsync();
+        try
+        {
+            await _db.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex)
+        {
+            // Los índices únicos de TokenId y PaymentId frenan dos confirmaciones simultáneas.
+            // Si ganó otra petición con esta misma donación, se devuelve esa; si no, el pago ya estaba usado.
+            _db.ChangeTracker.Clear();
+            var ganadora = await _db.Donaciones.FirstOrDefaultAsync(d => d.TokenId == tokenId);
+            if (ganadora is not null) return (ganadora, null);
+            _log.LogWarning(ex, "Pago {Pago} rechazado para la donación {Token}: ya usado", pago.Id, tokenId);
+            return (null, "Ese pago ya se usó para confirmar otra donación.");
+        }
 
         await AnclarAsync(donacion);
         await _db.SaveChangesAsync();
         return (donacion, null);
+    }
+
+    // Un pago confirma una donación solo si es exactamente el que se generó para ella:
+    // aprobado, con su token como external_reference, por el mismo monto en pesos y cobrado
+    // por la cuenta de la ONG. Devuelve null si corresponde, o el motivo del rechazo.
+    public static string? MotivoRechazo(PagoMercadoPago pago, DonacionPendiente pendiente, string? cuentaOng)
+    {
+        if (pago.Status != "approved")
+            return "El pago no fue aprobado.";
+        if (!string.Equals(pago.ExternalReference, pendiente.TokenId, StringComparison.Ordinal))
+            return "El pago no corresponde a esta donación.";
+        if (pago.Monto != pendiente.Monto)
+            return "El monto pagado no coincide con el de la donación.";
+        if (pago.Moneda is not null && pago.Moneda != "ARS")
+            return "El pago no está en pesos argentinos.";
+        if (string.IsNullOrEmpty(cuentaOng) || pago.CollectorId != cuentaOng)
+            return "El pago no lo cobró la organización del proyecto.";
+        return null;
     }
 
     public async Task<Donacion?> RastrearPorTokenAsync(string tokenId)

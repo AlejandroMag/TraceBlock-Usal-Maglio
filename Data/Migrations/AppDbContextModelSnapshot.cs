@@ -22,6 +22,25 @@ namespace TrazeaBlock.Data.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Microsoft.AspNetCore.DataProtection.EntityFrameworkCore.DataProtectionKey", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("FriendlyName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Xml")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("DataProtectionKeys");
+                });
+
             modelBuilder.Entity("TrazeaBlock.Models.Comunicado", b =>
                 {
                     b.Property<int>("Id")
@@ -105,6 +124,10 @@ namespace TrazeaBlock.Data.Migrations
                         .HasColumnType("integer");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("PaymentId")
+                        .IsUnique()
+                        .HasFilter("\"PaymentId\" <> ''");
 
                     b.HasIndex("ProyectoId");
 
@@ -287,6 +310,9 @@ namespace TrazeaBlock.Data.Migrations
                         .HasColumnType("text");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("MpUserId")
+                        .IsUnique();
 
                     b.HasIndex("OrganizacionId")
                         .IsUnique();

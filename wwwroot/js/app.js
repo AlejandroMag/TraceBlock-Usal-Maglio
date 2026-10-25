@@ -45,15 +45,14 @@ window.renderLineChart = (canvasId, labels, datasets) => {
     });
 };
 
-// Capa base de los mapas.
-// Se usan los tiles de CARTO (sirven datos de OpenStreetMap): los servidores de tiles
-// de OSM son voluntarios y bloquean el uso que no sigue su política, además de tener
-// deprecado el esquema {s}.tile.openstreetmap.org. La atribución sigue siendo obligatoria.
+// Capa base de los mapas: Esri World Street Map, que no pide API key.
+// Historial: los servidores de OSM bloquean el uso que no sigue su política (son voluntarios)
+// y CARTO pasó a exigir API key en sus basemaps. Ojo: Esri usa el orden {z}/{y}/{x}.
+// La atribución es obligatoria.
 window.capaBase = () => L.tileLayer(
-    'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        subdomains: 'abcd',
-        maxZoom: 20,
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 19,
+        attribution: 'Tiles &copy; <a href="https://www.esri.com">Esri</a> &mdash; Esri, HERE, Garmin, &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
     });
 
 // Leaflet map init

@@ -1,5 +1,6 @@
 @page "/login"
 @inject NavigationManager Nav
+@inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
 
 <PageTitle>Ingresar — TraceBlock</PageTitle>
 
@@ -28,8 +29,14 @@
                 </form>
 
                 <p class="text-center text-muted mt-3 mb-0" style="font-size:0.85rem;">
-                    ¿No tenés cuenta? <a href="/registro">Registrate</a><br />
-                    Demo: <code>donante1@@demo.com</code> / <code>Demo1234</code>
+                    ¿No tenés cuenta? <a href="/registro">Registrate</a>
+                    @* Las credenciales de demo solo se muestran en desarrollo: en un sitio público
+                       cualquiera podría entrar como ONG y gastar el saldo de la billetera. *@
+                    @if (Env.IsDevelopment())
+                    {
+                        <br />
+                        <span>Demo: <code>donante1@@demo.com</code> / <code>Demo1234</code></span>
+                    }
                 </p>
             </div></div>
         </div>

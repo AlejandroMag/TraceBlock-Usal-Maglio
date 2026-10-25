@@ -1,6 +1,8 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using TrazeaBlock.Configuration;
 using TrazeaBlock.Data;
@@ -35,8 +37,14 @@ if (rutaPadron is not null)
     return;
 }
 
+// Render (y otros hostings) asignan el puerto por la variable PORT.
+var puerto = Environment.GetEnvironmentVariable("PORT");
+if (!string.IsNullOrEmpty(puerto))
+    builder.WebHost.UseUrls($"http://0.0.0.0:{puerto}");
+
 // 1. DbContext (PostgreSQL). El retry cubre el arranque en Docker, donde la app
-// puede levantar antes de que la base acepte conexiones.
+// puede levantar antes de que la base acepte conexiones, y el despertar de Neon,
+// que suspende la base tras unos minutos sin uso.
 builder.Services.AddDbContext<AppDbContext>(o =>
     o.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"),
         npgsql => npgsql.EnableRetryOnFailure()));
@@ -97,6 +105,23 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
     });
 builder.Services.AddAuthorization();
 builder.Services.AddHttpContextAccessor();
+
+// Las claves que cifran las cookies se guardan en la base: el hosting no tiene disco
+// persistente y, si se regeneraran en cada reinicio, se desloguearía a todos.
+builder.Services.AddDataProtection()
+    .PersistKeysToDbContext<AppDbContext>()
+    .SetApplicationName("TraceBlock");
+
+// En producción la app corre detrás de un proxy (Render, Cloudflare) que recibe el HTTPS y
+// le reenvía la petición por HTTP. Estas cabeceras le dicen el esquema original: sin ellas
+// la app se cree en http y arma mal las URLs de vuelta de MercadoPago. Los proxies del
+// hosting no tienen IPs fijas conocidas, por eso se aceptan de cualquier origen.
+builder.Services.Configure<ForwardedHeadersOptions>(o =>
+{
+    o.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    o.KnownNetworks.Clear();
+    o.KnownProxies.Clear();
+});
 builder.Services.AddCascadingAuthenticationState();
 
 // 6. Blazor Server
@@ -120,6 +145,7 @@ if (blockchainOptions.UsarBlockchainReal)
     _ = app.Services.GetRequiredService<IBlockchainService>();
 
 // 9. Middleware
+app.UseForwardedHeaders(); // primero: el resto tiene que ver el esquema real (https)
 app.UseStaticFiles();
 app.UseRouting();
 app.UseAuthentication();
@@ -240,8 +266,15 @@ app.MapGet("/mp/cb", async (MercadoPagoConexionService conexion, OAuthStateStore
         return Results.Redirect("/ong/dashboard?mp=error");
     var orgId = store.Consumir(state);
     if (orgId is null) return Results.Redirect("/ong/dashboard?mp=error");
-    var (ok, _) = await conexion.ConectarAsync(orgId.Value, code);
-    return Results.Redirect(ok ? "/ong/dashboard?mp=ok" : "/ong/dashboard?mp=error");
+    var resultado = await conexion.ConectarAsync(orgId.Value, code);
+    return Results.Redirect("/ong/dashboard?mp=" + resultado switch
+    {
+        ResultadoConexionMp.Conectada => "ok",
+        ResultadoConexionMp.Renovada => "renovada",
+        ResultadoConexionMp.CuentaDistinta => "distinta",
+        ResultadoConexionMp.CuentaEnUso => "enuso",
+        _ => "error"
+    });
 });
 
 app.MapBlazorHub();

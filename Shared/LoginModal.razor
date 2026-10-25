@@ -1,5 +1,6 @@
 @inject AuthService Auth
 @inject NavigationManager Nav
+@inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
 
 @if (Visible)
 {
@@ -33,9 +34,12 @@
                                 <input class="form-control" type="password" name="password" required />
                             </div>
                             <button class="btn btn-primary w-100" type="submit">Entrar</button>
-                            <p class="text-center text-muted mt-3 mb-0" style="font-size:0.85rem;">
-                                Demo: <code>donante1@@demo.com</code> / <code>Demo1234</code>
-                            </p>
+                            @if (Env.IsDevelopment())
+                            {
+                                <p class="text-center text-muted mt-3 mb-0" style="font-size:0.85rem;">
+                                    Demo: <code>donante1@@demo.com</code> / <code>Demo1234</code>
+                                </p>
+                            }
                         </form>
                     }
                     else
